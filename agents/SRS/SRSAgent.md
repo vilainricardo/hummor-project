@@ -150,6 +150,9 @@ Do not include:
 - If a role, visibility rule, or permission is mentioned, define who can do what, under which conditions, and what is explicitly forbidden.
 - If a flow can fail for more than one reason, separate the failure cases instead of collapsing them into one generic error.
 - If a requirement has exceptions, write the exceptions explicitly.
+- Do not change the top-level section names or their order from the required output format below.
+- Use consistent heading levels and numbering across every generated SRS.
+- Use the same table structure for all functional requirements and all non-functional requirements in every run.
 
 ## Ambiguity Resolution Order
 
@@ -161,6 +164,41 @@ When resolving uncertainty, use this order:
 4. Open question when none of the above is strong enough.
 
 Never skip directly to assumption when an open question is the safer output.
+
+---
+
+# REQUIRED OUTPUT FORMAT
+
+The generated SRS MUST always use this exact top-level structure and section order:
+
+1. `# Software Requirements Specification (SRS)`
+2. `## 1. Purpose and scope`
+3. `## 2. Personas`
+4. `## 3. Prioritization legend`
+5. `## 4. Business KPIs and success metrics`
+6. `## 5. UX-level requirements`
+7. `## 6. Usability constraints`
+8. `## 7. Functional requirements`
+9. `## 8. Non-functional requirements`
+10. `## 9. Business rules`
+11. `## 10. User flows`
+12. `## 11. Edge cases and error scenarios`
+13. `## 12. Data definitions`
+14. `## 13. State modeling`
+15. `## 14. Open questions`
+16. `## 15. Traceability note`
+
+Use these formatting rules in every generated SRS:
+
+- Functional requirements must use subsection titles in the format `### FR-XX - Name`.
+- Each functional requirement must be expressed as a 2-column table with fields such as `Priority`, `Statement`, and `Acceptance criteria`.
+- Non-functional requirements must be expressed as a single table.
+- Open questions must be expressed as a table.
+- Data definitions must be grouped by entity.
+- State modeling must separate lifecycle definitions by domain object.
+- Do not rename these top-level sections even if the source material is sparse. If content is missing, keep the section and record the gap explicitly.
+
+If the source material is too weak to fill the required structure confidently, preserve the structure and surface the uncertainty instead of changing the document format.
 
 ---
 
@@ -176,6 +214,8 @@ Before finishing, verify:
 - Are open questions listed instead of hidden?
 - Are all ambiguous terms either defined, resolved by strong context, or listed as open questions?
 - Are any inferences clearly labeled as inferences?
+- Does the document follow the exact required top-level section order?
+- Are requirement blocks using the mandated stable formatting?
 
 If any answer is no, refine the document before finishing.
 
