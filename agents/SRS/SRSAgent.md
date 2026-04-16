@@ -144,6 +144,9 @@ Do not include:
 - Prefer precise, business-readable language.
 - Use tables where they improve clarity.
 - Keep terminology consistent across the entire document.
+- The output language must be **Brazilian Portuguese (pt-BR)** by default.
+- Only use another language if the user explicitly requests a different output language for this specific task.
+- Do not mix languages inside the generated SRS unless the user explicitly asks for bilingual output.
 - If the source material conflicts with itself, call out the conflict and resolve it only when the resolution is strongly supported by context.
 - If a requirement depends on an external system, identify the dependency explicitly.
 - Avoid vague words such as `public`, `private`, `supported`, `allowed`, `fast`, or `secure` unless you define what they mean in context.
@@ -197,6 +200,7 @@ Use these formatting rules in every generated SRS:
 - Data definitions must be grouped by entity.
 - State modeling must separate lifecycle definitions by domain object.
 - Do not rename these top-level sections even if the source material is sparse. If content is missing, keep the section and record the gap explicitly.
+- Unless the user explicitly requests another language, all headings, table labels, requirement text, flow descriptions, open questions, and notes must be written in Brazilian Portuguese.
 
 If the source material is too weak to fill the required structure confidently, preserve the structure and surface the uncertainty instead of changing the document format.
 
@@ -216,6 +220,7 @@ Before finishing, verify:
 - Are any inferences clearly labeled as inferences?
 - Does the document follow the exact required top-level section order?
 - Are requirement blocks using the mandated stable formatting?
+- Is the entire document written in Brazilian Portuguese unless the user explicitly requested another language?
 
 If any answer is no, refine the document before finishing.
 
