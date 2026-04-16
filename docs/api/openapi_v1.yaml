@@ -1,0 +1,761 @@
+openapi: 3.0.3
+info:
+  title: Hub de Controle de Humor API
+  version: 1.1.0
+  description: |
+    REST API aligned to **SRS v1** and **SAD v1**.
+
+    ## Versioning
+    - Base path **`/v1`** is stable for MVP. Additive changes (new optional fields, new endpoints)
+      ship without bumping major. Breaking removals or semantic changes require **`/v2`** and
+      a published migration notice (minimum 90 days for GA tenants).
+    - `info.version` follows SemVer for the **document** only; it may move faster than URL major.
+
+    ## Governance
+    - **Naming:** plural resource collections (`/v1/mood` exception: singular for diary UX stability),
+      `lower_snake_case` in JSON, `camelCase` query params avoided (use `snake_case`).
+    - **Pagination:** cursor + `limit` (1–100) on all list endpoints; opaque `cursor`, never page numbers.
+    - **Idempotency:** `Idempotency-Key` required on POST that creates rows or jobs; replays return same
+      response and MUST NOT double-apply side effects (`IDEMPOTENCY_REPLAY` may be logged server-side only).
+    - **Errors:** `application/problem+json` (`Problem` schema); `hub_error_code` is stable for clients;
+      new codes require changelog entry in repo `docs/api/CHANGELOG.md` (process control).
+
+    Cursor pagination on list endpoints. RFC 9457 problem+json.
+servers:
+  - url: https://api.example.com
+    description: Production
+tags:
+  - name: Profile
+  - name: Mood
+  - name: Groups
+  - name: Analytics
+  - name: Actions
+  - name: Exports
+  - name: Clinical
+  - name: Meta
+paths:
+  /v1/health:
+    get:
+      tags: [Meta]
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+  /v1/users/me:
+    get:
+      tags: [Profile]
+      security: [{ bearerAuth: [] }]
+      summary: Current user profile
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Profile]
+      security: [{ bearerAuth: [] }]
+      summary: Update allowed profile fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/mood:
+    get:
+      tags: [Mood]
+      security: [{ bearerAuth: [] }]
+      summary: List own mood entries
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Page of mood entries
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoodPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Mood]
+      security: [{ bearerAuth: [] }]
+      summary: Create mood entry (1-5 + optional note)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoodCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoodEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/mood/{entryId}:
+    delete:
+      tags: [Mood]
+      security: [{ bearerAuth: [] }]
+      summary: Hard delete own mood entry
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: entryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/groups:
+    post:
+      tags: [Groups]
+      security: [{ bearerAuth: [] }]
+      summary: Create group
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/groups/{groupId}:
+    get:
+      tags: [Groups]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/groups/{groupId}/invites:
+    post:
+      tags: [Groups]
+      security: [{ bearerAuth: [] }]
+      summary: FR-08 invite user to group (pending until accept)
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invitee_user_id]
+              properties:
+                invitee_user_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupInvite"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/invites/{inviteId}/accept:
+    post:
+      tags: [Groups]
+      security: [{ bearerAuth: [] }]
+      summary: FR-08 accept membership invite
+      parameters:
+        - name: inviteId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Membership active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/groups/{groupId}/members/me/visibility:
+    put:
+      tags: [Groups]
+      security: [{ bearerAuth: [] }]
+      summary: FR-18 visibility contribution (INDIVIDUAL groups)
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility_contribution]
+              properties:
+                visibility_contribution:
+                  type: string
+                  enum: [hidden, visible_to_admins]
+      responses:
+        "200":
+          description: Updated membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/groups/{groupId}/aggregate/mood:
+    get:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      summary: k-gated mood aggregate (k=5 default)
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Aggregate payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoodAggregate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: insufficient_cohort or policy denial
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                insufficient:
+                  value:
+                    type: "https://api.example.com/problems/insufficient-cohort"
+                    title: Insufficient cohort
+                    status: 409
+                    detail: Distinct active members below k=5 for requested window.
+                    instance: "urn:uuid:..."
+                    hub_error_code: INSUFFICIENT_COHORT
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/groups/{groupId}/actions:
+    post:
+      tags: [Actions]
+      security: [{ bearerAuth: [] }]
+      summary: Register group action
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Action"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/groups/{groupId}/exports:
+    post:
+      tags: [Exports]
+      security: [{ bearerAuth: [] }]
+      summary: FR-13 idempotent export job
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: insufficient_cohort
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      callbacks:
+        exportJobFinished:
+          "{$request.body#/callback_url}":
+            post:
+              summary: Export job terminal state notification
+              description: >
+                Invoked when job reaches `succeeded` or `failed`. Tenant verifies `X-Hub-Signature-256`
+                then returns 2xx quickly; use separate pull if processing is heavy.
+              parameters:
+                - name: X-Hub-Signature-256
+                  in: header
+                  required: true
+                  schema: { type: string }
+                  description: HMAC-SHA256 hex of raw body using tenant webhook secret
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/ExportJobCallback"
+                    examples:
+                      success:
+                        value:
+                          job_id: "550e8400-e29b-41d4-a716-446655440000"
+                          group_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                          state: succeeded
+                          event_at: "2026-04-12T12:00:00Z"
+                          download_url: "https://objects.example.com/presigned/..."
+                          hub_error_code: null
+              responses:
+                "204":
+                  description: Acknowledged
+                "400":
+                  description: Tenant rejected payload shape (still retry policy server-side)
+  /v1/export-jobs/{jobId}:
+    get:
+      tags: [Exports]
+      security: [{ bearerAuth: [] }]
+      summary: Poll export job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/clinical-links:
+    post:
+      tags: [Clinical]
+      security: [{ bearerAuth: [] }]
+      summary: Create clinical link with consent artifact ids
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClinicalLinkCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalLink"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /v1/clinical-links/{linkId}/revoke:
+    post:
+      tags: [Clinical]
+      security: [{ bearerAuth: [] }]
+      summary: FR-19 patient revoke
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "204":
+          description: Revoked
+        "403":
+          $ref: "#/components/responses/Forbidden"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Hub-issued JWT; roles in claims `roles[]`.
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: Opaque pagination cursor
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 256
+  headers:
+    X-RateLimit-Limit:
+      schema: { type: string }
+      description: Max requests per window
+    X-RateLimit-Remaining:
+      schema: { type: string }
+    X-RateLimit-Reset:
+      schema: { type: string }
+      description: UNIX epoch seconds
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: Validation error
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Rate limited
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        hub_error_code:
+          type: string
+          description: Stable machine code
+          enum:
+            - VALIDATION_ERROR
+            - INSUFFICIENT_COHORT
+            - POLICY_DENY
+            - IDEMPOTENCY_REPLAY
+    UserProfile:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string, maxLength: 120 }
+    UserProfileUpdate:
+      type: object
+      properties:
+        display_name: { type: string, maxLength: 120 }
+    MoodCreate:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: integer
+          minimum: 1
+          maximum: 5
+        note:
+          type: string
+          maxLength: 2000
+        recorded_at:
+          type: string
+          format: date-time
+          description: Optional client time; server authoritative if skew > 5m
+    MoodEntry:
+      type: object
+      required: [entry_id, user_id, value, recorded_at]
+      properties:
+        entry_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        value: { type: integer, minimum: 1, maximum: 5 }
+        note: { type: string, maxLength: 2000, nullable: true }
+        recorded_at: { type: string, format: date-time }
+    MoodPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MoodEntry"
+        next_cursor:
+          type: string
+          nullable: true
+    GroupCreate:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, maxLength: 200 }
+        type:
+          type: string
+          enum: [INDIVIDUAL_PUBLIC, INDIVIDUAL, GROUPED]
+        description: { type: string, maxLength: 4000 }
+    Group:
+      type: object
+      required: [group_id, name, type, tenant_id]
+      properties:
+        group_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        type:
+          type: string
+          enum: [INDIVIDUAL_PUBLIC, INDIVIDUAL, GROUPED]
+        description: { type: string, nullable: true }
+    Membership:
+      type: object
+      properties:
+        group_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        role:
+          type: string
+          enum: [owner, admin, member]
+        visibility_contribution:
+          type: string
+          enum: [hidden, visible_to_admins]
+    MoodAggregate:
+      type: object
+      required: [k, cohort_size, points]
+      properties:
+        k: { type: integer, minimum: 5, default: 5 }
+        cohort_size: { type: integer, minimum: 5 }
+        points:
+          type: array
+          items:
+            type: object
+            required: [bucket_start, avg, n]
+            properties:
+              bucket_start: { type: string, format: date-time }
+              avg: { type: number }
+              n: { type: integer, minimum: 5 }
+    ActionCreate:
+      type: object
+      required: [title, occurred_at]
+      properties:
+        title: { type: string, maxLength: 200 }
+        occurred_at: { type: string, format: date-time }
+        description: { type: string, maxLength: 4000 }
+    Action:
+      type: object
+      properties:
+        action_id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        title: { type: string }
+        occurred_at: { type: string, format: date-time }
+        description: { type: string, nullable: true }
+    ExportRequest:
+      type: object
+      required: [from, to, format]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        format:
+          type: string
+          enum: [csv, json]
+        callback_url:
+          type: string
+          format: uri
+          description: >
+            Optional HTTPS URL for export job completion callback (SRS FR-14). Server POSTs
+            `ExportJobCallback` JSON with `X-Hub-Signature-256` HMAC of raw body using per-tenant secret
+            rotated via hub; tenants MUST verify signature before trusting payload.
+          example: https://tenant.example.com/hooks/export-done
+    ExportJobCallback:
+      type: object
+      required: [job_id, group_id, state, event_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        state:
+          type: string
+          enum: [succeeded, failed]
+        event_at: { type: string, format: date-time }
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+        hub_error_code:
+          type: string
+          nullable: true
+    ExportJob:
+      type: object
+      properties:
+        job_id: { type: string, format: uuid }
+        state:
+          type: string
+          enum: [queued, processing, succeeded, failed]
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Time-limited presigned URL when succeeded
+        hub_error_code:
+          type: string
+          nullable: true
+    ClinicalLinkCreate:
+      type: object
+      required: [patient_user_id, consent_artifact_ids]
+      properties:
+        patient_user_id: { type: string, format: uuid }
+        consent_artifact_ids:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+    ClinicalLink:
+      type: object
+      properties:
+        link_id: { type: string, format: uuid }
+        professional_user_id: { type: string, format: uuid }
+        patient_user_id: { type: string, format: uuid }
+        consent_artifact_ids:
+          type: array
+          items: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, active, revoked]
+    GroupInvite:
+      type: object
+      required: [invite_id, group_id, status]
+      properties:
+        invite_id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        invitee_user_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, accepted, revoked]
