@@ -1,4 +1,4 @@
-package com.rb.multi.agent.web;
+package com.rb.multi.agent.controller;
 
 import java.net.URI;
 import java.util.List;
