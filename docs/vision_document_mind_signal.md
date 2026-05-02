@@ -28,6 +28,8 @@ Isso resulta em:
 ### Secundário  
 - Psiquiatras que realizam acompanhamento longitudinal  
 
+**Nota (conta de utilizador):** no modelo de produto, **toda conta é paciente**; o psiquiatra corresponde à **mesma noção de utilizador** com **capacidade médica adicional** (ex.: `is_doctor`), e não a um “tipo” exclusivo em alternativa a paciente.
+
 ---
 
 ## 3. Stakeholders

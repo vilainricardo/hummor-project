@@ -30,6 +30,11 @@ Este documento reúne decisões, diretrizes e nuances que **não fazem parte do 
 - Paciente é dono dos dados
 - Compartilhamento sempre explícito e reversível
 
+### 1.5 Identidade do utilizador (conta única)
+- **Todo registo na aplicação é**, em primeiro lugar, **paciente** (quem regista humor, sono, tags e controla a partilha).
+- A mesma conta pode **também** ter capacidade de **médico** (`is_doctor`): não se modela “ou paciente ou médico” como tipos excludentes.
+- Autorização de rotas de profissional deve assentar em **flag/capacidade médica**, não num `type` mutuamente exclusivo com paciente.
+
 ---
 
 ## 2. Diretrizes de UX (Alto Nível)

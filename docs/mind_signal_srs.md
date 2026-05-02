@@ -10,6 +10,9 @@ Documento completo de requisitos para desenvolvimento, testes e arquitetura.
 - Sistema informativo, não clínico
 - Controle total de dados pelo paciente
 
+### 1.3 Modelo de conta (utilizador)
+- Toda conta é **paciente**; capacidade de atuar como **médico** é **adicional** (ex.: `is_doctor`), não um tipo exclusivo em alternativa a paciente.
+
 ---
 
 ## 2. Requisitos Funcionais
