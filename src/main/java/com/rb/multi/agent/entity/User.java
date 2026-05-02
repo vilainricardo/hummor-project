@@ -13,9 +13,10 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
- * Todo utilizador registado é sempre um <strong>paciente</strong>; pode também ter função médica via {@link #isDoctor()}.
- *
- * Coluna persistida: {@code is_doctor}. Alinhado ao SAD §7.2 (<code>users</code>).
+ * <p><b>EN:</b> Every account is a patient first; clinician capabilities use {@link #isDoctor()}; column {@code is_doctor}.
+ * SAD §7.2 (<code>users</code>).</p>
+ * <p><b>PT-BR:</b> Toda conta é paciente primeiro; função clínica via {@link #isDoctor()}; coluna {@code is_doctor}.
+ * SAD §7.2 (<code>users</code>).</p>
  */
 @Entity
 @Table(name = "users")
@@ -52,18 +53,31 @@ public class User {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
+	/** EN: JPA-only. PT-BR: Apenas JPA. */
 	protected User() {
 	}
 
+	/**
+	 * <p><b>EN:</b> Patient-only convenience ctor — {@code doctor} defaults {@code false}.</p>
+	 * <p><b>PT-BR:</b> Atalho só paciente — {@code doctor} fica {@code false}.</p>
+	 */
 	public User(String code) {
 		this(code, false);
 	}
 
+	/**
+	 * <p><b>EN:</b> Persists clinician flag aligned with SRS patient-first wording.</p>
+	 * <p><b>PT-BR:</b> Persistência do flag médico alinhado com modelo SRS “paciente primeiro”.</p>
+	 */
 	public User(String code, boolean isDoctor) {
 		this.code = Objects.requireNonNull(code, "code");
 		this.isDoctor = isDoctor;
 	}
 
+	/**
+	 * <p><b>EN:</b> Ensures {@code created_at} exists before first insert.</p>
+	 * <p><b>PT-BR:</b> Garante {@code created_at} antes da primeira persistência.</p>
+	 */
 	@PrePersist
 	void populateCreatedAt() {
 		if (createdAt == null) {

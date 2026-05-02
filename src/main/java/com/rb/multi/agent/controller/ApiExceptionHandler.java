@@ -14,14 +14,22 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.rb.multi.agent.dto.ApiErrorResponse;
 import com.rb.multi.agent.dto.ApiProblemCode;
+import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+/**
+ * <p><b>EN:</b> Maps controller-layer exceptions into {@link ApiErrorResponse}; messages from {@link MessageSource}.</p>
+ * <p><b>PT-BR:</b> Mapeia exceções da camada de controladores para {@link ApiErrorResponse}; mensagens via
+ * {@link MessageSource}.</p>
+ */
 @RestControllerAdvice(basePackages = "com.rb.multi.agent.controller")
 public class ApiExceptionHandler {
 
@@ -33,15 +41,21 @@ public class ApiExceptionHandler {
 		this.messageSource = messageSource;
 	}
 
+	/** EN: Resolve i18n key with current locale. PT-BR: Resolve chave i18n com o locale atual. */
 	private String msg(String code, Object... args) {
 		Locale locale = LocaleContextHolder.getLocale();
 		return messageSource.getMessage(code, args, code, locale);
 	}
 
+	/** EN: Request path for diagnostics. PT-BR: Caminho HTTP para diagnóstico. */
 	private static String path(HttpServletRequest request) {
 		return request != null ? request.getRequestURI() : null;
 	}
 
+	/**
+	 * <p><b>EN:</b> Builds Problem+HTTP response with optional field-level validation map.</p>
+	 * <p><b>PT-BR:</b> Constrói resposta problema+HTTP com mapa opcional de campos validados.</p>
+	 */
 	private ResponseEntity<ApiErrorResponse> respond(
 			HttpServletRequest request,
 			HttpStatus status,
@@ -52,13 +66,35 @@ public class ApiExceptionHandler {
 		return ResponseEntity.status(status).body(body);
 	}
 
+	/** EN: User missing by UUID or public code. PT-BR: Utilizador inexistente por UUID ou code público. */
 	@ExceptionHandler(UserNotFoundException.class)
 	public ResponseEntity<ApiErrorResponse> userNotFound(UserNotFoundException ex, HttpServletRequest request) {
-		ApiProblemCode problem = ex.lookupById() ? ApiProblemCode.USER_NOT_FOUND : ApiProblemCode.USER_NOT_FOUND_BY_CODE;
-		String key = ex.lookupById() ? "error.user.notFound" : "error.user.notFoundByCode";
+		ApiProblemCode problem = ex.resolvedByUuid() ? ApiProblemCode.USER_NOT_FOUND : ApiProblemCode.USER_NOT_FOUND_BY_CODE;
+		String key = ex.resolvedByUuid() ? "error.user.notFound" : "error.user.notFoundByCode";
 		return respond(request, HttpStatus.NOT_FOUND, problem, msg(key, ex.messageArguments()), null);
 	}
 
+	/** EN: Tag missing by id or name. PT-BR: Etiqueta inexistente por id ou nome. */
+	@ExceptionHandler(TagNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> tagNotFound(TagNotFoundException ex, HttpServletRequest request) {
+		ApiProblemCode problem =
+				ex.resolvedByUuid() ? ApiProblemCode.TAG_NOT_FOUND : ApiProblemCode.TAG_NOT_FOUND_BY_NAME;
+		String key = ex.resolvedByUuid() ? "error.tag.notFound" : "error.tag.notFoundByName";
+		return respond(request, HttpStatus.NOT_FOUND, problem, msg(key, ex.messageArguments()), null);
+	}
+
+	/** EN: Canonical tag name already taken. PT-BR: Nome de etiqueta já em uso. */
+	@ExceptionHandler(DuplicateTagNameException.class)
+	public ResponseEntity<ApiErrorResponse> duplicateTagName(DuplicateTagNameException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.CONFLICT,
+				ApiProblemCode.TAG_NAME_CONFLICT,
+				msg("error.tag.duplicateName", ex.getName()),
+				null);
+	}
+
+	/** EN: User public code already taken. PT-BR: Code de utilizador público já em uso. */
 	@ExceptionHandler(DuplicateUserCodeException.class)
 	public ResponseEntity<ApiErrorResponse> duplicateCode(DuplicateUserCodeException ex, HttpServletRequest request) {
 		return respond(
@@ -69,6 +105,7 @@ public class ApiExceptionHandler {
 				null);
 	}
 
+	/** EN: Illegal argument from domain/service → 400. PT-BR: Argumento inválido na camada de domínio/serviço → 400. */
 	@ExceptionHandler(IllegalArgumentException.class)
 	public ResponseEntity<ApiErrorResponse> badRequest(IllegalArgumentException ex, HttpServletRequest request) {
 		return respond(
@@ -79,6 +116,25 @@ public class ApiExceptionHandler {
 				null);
 	}
 
+	/** EN: Path/param type mismatch → 400. PT-BR: Tipo incorreto de parâmetro/caminho → 400. */
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ApiErrorResponse> typeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+		String param = ex.getName();
+		Object val = ex.getValue();
+		String required = ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "?";
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.INVALID_ARGUMENT,
+				msg(
+						"error.argument.typeMismatch",
+						param,
+						val != null ? val.toString() : "",
+						required),
+				null);
+	}
+
+	/** EN: Bean Validation / MVC binding errors → 400 + fieldErrors. PT-BR: Bean Validation / binding MVC → 400 + fieldErrors. */
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ApiErrorResponse> validation(MethodArgumentNotValidException ex, HttpServletRequest request) {
 		Map<String, String> fields = new LinkedHashMap<>();
@@ -97,6 +153,7 @@ public class ApiExceptionHandler {
 				fields);
 	}
 
+	/** EN: Catch-all mapped to sanitized 500 narrative. PT-BR: Último recurso → 500 com mensagem genérica segura. */
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiErrorResponse> internalError(Exception ex, HttpServletRequest request) {
 		log.error("Unhandled API error", ex);

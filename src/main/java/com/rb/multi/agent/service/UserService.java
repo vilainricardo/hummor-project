@@ -14,6 +14,10 @@ import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.UserRepository;
 
+/**
+ * <p><b>EN:</b> Application service coordinating {@link User} lifecycle rules (code uniqueness + profile mapping).</p>
+ * <p><b>PT-BR:</b> Serviço de aplicação com regras de ciclo de vida de {@link User} (unicidade do code + mapeamento de perfil).</p>
+ */
 @Service
 public class UserService {
 
@@ -23,21 +27,25 @@ public class UserService {
 		this.userRepository = userRepository;
 	}
 
+	/** EN: Ordered table scan surrogate for admin surfaces. PT-BR: Lista completa adequada para ecrãs administrativos. */
 	@Transactional(readOnly = true)
 	public List<User> findAll() {
 		return userRepository.findAll();
 	}
 
+	/** EN: Locate account by surrogate UUID key. PT-BR: Localiza conta pela chave UUID surrogate. */
 	@Transactional(readOnly = true)
 	public Optional<User> findById(UUID id) {
 		return userRepository.findById(id);
 	}
 
+	/** EN: Locate account by externally visible deterministic code. PT-BR: Localiza conta pelo {@code code} público determinístico. */
 	@Transactional(readOnly = true)
 	public Optional<User> findByCode(String code) {
 		return userRepository.findByCode(code);
 	}
 
+	/** EN: Inserts enforcing normalized unique {@code code}. PT-BR: Inserção com {@code code} único normalizado. */
 	@Transactional
 	public User create(UserWriteRequest request) {
 		String normalizedCode = normalizeCode(request.code());
@@ -49,6 +57,7 @@ public class UserService {
 		return userRepository.save(entity);
 	}
 
+	/** EN: Applies write-request allowing code swaps when uniqueness holds. PT-BR: Actualiza inclusivé troca de code se unicidade for mantida. */
 	@Transactional
 	public User update(UUID id, UserWriteRequest request) {
 		User entity = userRepository.findById(id).orElseThrow(() -> UserNotFoundException.byId(id));
@@ -66,6 +75,7 @@ public class UserService {
 		return userRepository.save(entity);
 	}
 
+	/** EN: Removes aggregate when present otherwise {@link UserNotFoundException}. PT-BR: Remove agregado; senão lança {@link UserNotFoundException}. */
 	@Transactional
 	public void deleteById(UUID id) {
 		if (!userRepository.existsById(id)) {
@@ -74,6 +84,7 @@ public class UserService {
 		userRepository.deleteById(id);
 	}
 
+	/** EN: Copies demographics from DTO respecting nullability semantics. PT-BR: Copia dados demográficos do DTO com semântica de nulos esperada. */
 	private static void applyProfile(User entity, UserWriteRequest request) {
 		entity.setAge(request.age());
 		entity.setProfession(request.profession());
@@ -83,6 +94,7 @@ public class UserService {
 		entity.setAddressLine(request.addressLine());
 	}
 
+	/** EN: Validates trimmed length-bounded canonical user code text. PT-BR: Valida texto do code utilizador com strip e comprimento máximo. */
 	private static String normalizeCode(String code) {
 		String trimmed = Objects.requireNonNull(code, "code").trim();
 		if (trimmed.isEmpty()) {
@@ -93,5 +105,4 @@ public class UserService {
 		}
 		return trimmed;
 	}
-
 }

@@ -5,7 +5,10 @@ import java.util.UUID;
 
 import com.rb.multi.agent.entity.User;
 
-/** Representação REST de {@link User} em leitura. */
+/**
+ * <p><b>EN:</b> Read-model DTO for {@link User} responses.</p>
+ * <p><b>PT-BR:</b> DTO de leitura para respostas de {@link User}.</p>
+ */
 public record UserResponse(
 		UUID id,
 		String code,
@@ -19,6 +22,7 @@ public record UserResponse(
 		Instant createdAt
 ) {
 
+	/** EN: Maps entity to outbound JSON. PT-BR: Converte entidade para JSON de saída. */
 	public static UserResponse from(User entity) {
 		return new UserResponse(
 				entity.getId(),

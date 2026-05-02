@@ -4,9 +4,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Payload para criar ou atualizar {@link com.rb.multi.agent.entity.User} pela camada de serviço.
- *
- * Normalização ({@code trim}, reforço do limite do {@code code}) continua na {@link com.rb.multi.agent.service.UserService}.
+ * <p><b>EN:</b> Upsert payload for {@link com.rb.multi.agent.entity.User}; trimming and {@code code} sizing also enforced in
+ * {@link com.rb.multi.agent.service.UserService}.</p>
+ * <p><b>PT-BR:</b> Payload de criar/atualizar {@link com.rb.multi.agent.entity.User}; trim e tamanho de {@code code} são
+ * validados também no {@link com.rb.multi.agent.service.UserService}.</p>
  */
 public record UserWriteRequest(
 		@NotBlank(message = "{validation.user.code.blank}")

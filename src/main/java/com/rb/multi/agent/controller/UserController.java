@@ -22,6 +22,10 @@ import com.rb.multi.agent.service.UserService;
 
 import jakarta.validation.Valid;
 
+/**
+ * <p><b>EN:</b> CRUD facade for persisted {@link com.rb.multi.agent.entity.User} aggregates (SAD §7.2).</p>
+ * <p><b>PT-BR:</b> Fachada CRUD sobre agregados {@link com.rb.multi.agent.entity.User} persistidos (SAD §7.2).</p>
+ */
 @RestController
 @RequestMapping("/api/v1/users")
 public class UserController {
@@ -32,11 +36,13 @@ public class UserController {
 		this.userService = userService;
 	}
 
+	/** EN: Full user list projection. PT-BR: Lista todos os utilizadores (projeção de leitura). */
 	@GetMapping
 	public List<UserResponse> list() {
 		return userService.findAll().stream().map(UserResponse::from).toList();
 	}
 
+	/** EN: Loads user by surrogate UUID key. PT-BR: Obtém utilizador pela chave UUID. */
 	@GetMapping("/{id}")
 	public UserResponse getById(@PathVariable UUID id) {
 		return userService.findById(id)
@@ -44,6 +50,7 @@ public class UserController {
 				.orElseThrow(() -> UserNotFoundException.byId(id));
 	}
 
+	/** EN: Finds user via unique public-facing {@code code}. PT-BR: Encontra utilizador pelo {@code code} público único. */
 	@GetMapping("/by-code/{code}")
 	public UserResponse getByCode(@PathVariable String code) {
 		return userService.findByCode(code)
@@ -51,6 +58,7 @@ public class UserController {
 				.orElseThrow(() -> UserNotFoundException.byCode(code));
 	}
 
+	/** EN: Registers profile + {@code Location}. PT-BR: Regista perfil devolvendo cabeçalho {@code Location}. */
 	@PostMapping
 	public ResponseEntity<UserResponse> create(@Valid @RequestBody UserWriteRequest request) {
 		var saved = userService.create(request);
@@ -61,12 +69,14 @@ public class UserController {
 		return ResponseEntity.created(location).body(UserResponse.from(saved));
 	}
 
+	/** EN: PATCH-style replace constrained by uniqueness rules. PT-BR: Actualização tipo replace respeitando unicidade. */
 	@PutMapping("/{id}")
 	public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UserWriteRequest request) {
 		var saved = userService.update(id, request);
 		return UserResponse.from(saved);
 	}
 
+	/** EN: Deletes when row exists — 404 via service otherwise. PT-BR: Remove se existir; serviço gera 404 se não existir. */
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable UUID id) {
 		userService.deleteById(id);

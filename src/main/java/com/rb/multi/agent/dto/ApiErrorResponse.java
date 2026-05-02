@@ -10,9 +10,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
 /**
- * Saída padrão para erros expostos pela API REST.
- *
- * {@code title} usa a razão HTTP canónica; {@code message} segue idioma solicitado (<code>Accept-Language</code>).
+ * <p><b>EN:</b> Standard REST error envelope; {@code title} mirrors HTTP reason phrase;
+ * {@code message} resolves via {@code Accept-Language} / {@link org.springframework.context.MessageSource}.</p>
+ * <p><b>PT-BR:</b> Envelope padrão de erro REST; {@code title} segue a razão HTTP;
+ * {@code message} vem de idioma negociado ({@code Accept-Language}) / {@link org.springframework.context.MessageSource}.</p>
  */
 @JsonInclude(Include.NON_NULL)
 public record ApiErrorResponse(
@@ -26,6 +27,7 @@ public record ApiErrorResponse(
 		Map<String, String> fieldErrors
 ) {
 
+	/** EN: Omit empty/null field maps from JSON. PT-BR: Omite mapas de campos vazios/nulos do JSON. */
 	private static LinkedHashMap<String, String> copyNonEmpty(Map<String, String> fieldErrors) {
 		if (fieldErrors == null || fieldErrors.isEmpty()) {
 			return null;
@@ -33,6 +35,10 @@ public record ApiErrorResponse(
 		return new LinkedHashMap<>(fieldErrors);
 	}
 
+	/**
+	 * <p><b>EN:</b> Factory assembling HTTP status, problem code and localized narrative.</p>
+	 * <p><b>PT-BR:</b> Fábrica que monta estado HTTP, código de problema e mensagem localizada.</p>
+	 */
 	public static ApiErrorResponse of(
 			HttpStatus httpStatus,
 			ApiProblemCode problemCode,
