@@ -1,0 +1,11 @@
+---
+description: Git commit messages must be bilingual Portuguese (Brazil) and English (European).
+alwaysApply: true
+---
+
+# Commits bilíngues (pt-BR + en-EU)
+
+- Toda mensagem de commit deve incluir **português (Brasil)** e **inglês europeu** (en-EU — vocabulário e ortografia de preferência UK/IE quando houver divergência com EUA).
+- **Assunto**: uma linha curta combinando ambos, por exemplo `tipo(âmbito): texto PT-BR / EU English text`.
+- **Corpo**: quando precisar de detalhes, primeiro bloco **pt-BR**, depois bloco **English (European)** equivalente (ou dois parágrafos claros, um por língua).
+- Ao propor ou redigir commits neste projeto, siga sempre este formato.
