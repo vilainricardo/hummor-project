@@ -1,6 +1,9 @@
 package com.rb.multi.agent.dto;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import com.rb.multi.agent.entity.User;
@@ -19,11 +22,15 @@ public record UserResponse(
 		String country,
 		String city,
 		String addressLine,
-		Instant createdAt
-) {
+		Instant createdAt,
+		List<TagResponse> tags) {
 
 	/** EN: Maps entity to outbound JSON. PT-BR: Converte entidade para JSON de saída. */
 	public static UserResponse from(User entity) {
+		List<TagResponse> tagList = entity.getTags().stream()
+				.sorted(Comparator.comparing(t -> t.getName().toLowerCase(Locale.ROOT)))
+				.map(TagResponse::from)
+				.toList();
 		return new UserResponse(
 				entity.getId(),
 				entity.getCode(),
@@ -34,6 +41,7 @@ public record UserResponse(
 				entity.getCountry(),
 				entity.getCity(),
 				entity.getAddressLine(),
-				entity.getCreatedAt());
+				entity.getCreatedAt(),
+				tagList);
 	}
 }

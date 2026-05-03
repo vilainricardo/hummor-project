@@ -18,6 +18,8 @@ public enum ApiProblemCode {
 	TAG_NOT_FOUND_BY_NAME,
 	/** EN: Duplicate tag name. PT-BR: Nome de etiqueta duplicado. */
 	TAG_NAME_CONFLICT,
+	/** EN: One or more tag UUIDs absent from catalogue. PT-BR: Um ou mais UUIDs de tag inexistentes no catálogo. */
+	TAG_REFERENCES_INVALID,
 	/** EN: Bean validation failed. PT-BR: Falha de validação Bean Validation. */
 	VALIDATION_FAILED,
 	/** EN: Illegal argument or bad input. PT-BR: Argumento inválido ou entrada incorreta. */

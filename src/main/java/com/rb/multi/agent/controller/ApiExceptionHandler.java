@@ -21,6 +21,7 @@ import com.rb.multi.agent.dto.ApiProblemCode;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagNotFoundException;
+import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -91,6 +92,17 @@ public class ApiExceptionHandler {
 				HttpStatus.CONFLICT,
 				ApiProblemCode.TAG_NAME_CONFLICT,
 				msg("error.tag.duplicateName", ex.getName()),
+				null);
+	}
+
+	/** EN: User payload cited unknown catalogue tag ids → 400. PT-BR: Payload referiu ids de etiqueta inexistentes → 400. */
+	@ExceptionHandler(UnknownTagReferencesException.class)
+	public ResponseEntity<ApiErrorResponse> unknownTagRefs(UnknownTagReferencesException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.TAG_REFERENCES_INVALID,
+				msg("error.tag.unknownIds", ex.formattedIds()),
 				null);
 	}
 

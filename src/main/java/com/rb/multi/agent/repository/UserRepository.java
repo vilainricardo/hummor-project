@@ -1,9 +1,12 @@
 package com.rb.multi.agent.repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.rb.multi.agent.entity.User;
 
@@ -16,4 +19,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	Optional<User> findByCode(String code);
 
 	boolean existsByCode(String code);
+
+	/** EN: Hydrates catalogue tags eagerly to avoid cartesian explosions in listings. PT-BR: Carrega tags com fetch join nas listagens. */
+	@Query("select distinct u from User u left join fetch u.tags")
+	List<User> findAllWithTags();
+
+	/** EN: Single-user read including tag memberships. PT-BR: Leitura de um utilizador com tags associadas. */
+	@Query("select distinct u from User u left join fetch u.tags where u.id = :id")
+	Optional<User> findWithTagsById(@Param("id") UUID id);
+
+	/** EN: Lookup by {@code code} including tag memberships. PT-BR: Busca pelo {@code code} incluindo tags. */
+	@Query("select distinct u from User u left join fetch u.tags where u.code = :code")
+	Optional<User> findWithTagsByCode(@Param("code") String code);
 }

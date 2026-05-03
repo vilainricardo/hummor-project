@@ -1,22 +1,28 @@
 package com.rb.multi.agent.entity;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
  * <p><b>EN:</b> Every account is a patient first; clinician capabilities use {@link #isDoctor()}; column {@code is_doctor}.
- * SAD §7.2 (<code>users</code>).</p>
+ * SAD §7.2 (<code>users</code>). Optional catalogue links via {@link #getTags()} / <code>user_tags</code>.</p>
  * <p><b>PT-BR:</b> Toda conta é paciente primeiro; função clínica via {@link #isDoctor()}; coluna {@code is_doctor}.
- * SAD §7.2 (<code>users</code>).</p>
+ * SAD §7.2 (<code>users</code>). Ligações opcionais ao catálogo global via {@link #getTags()} / tabela <code>user_tags</code>.</p>
  */
 @Entity
 @Table(name = "users")
@@ -52,6 +58,17 @@ public class User {
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
+
+	/**
+	 * <p><b>EN:</b> Subset of rows from <code>tags</code>; join table <code>user_tags</code> (lazy).</p>
+	 * <p><b>PT-BR:</b> Subconjunto do catálogo <code>tags</code>; tabela de junção <code>user_tags</code> (lazy).</p>
+	 */
+	@ManyToMany(fetch = FetchType.LAZY)
+	@JoinTable(
+			name = "user_tags",
+			joinColumns = @JoinColumn(name = "user_id", nullable = false),
+			inverseJoinColumns = @JoinColumn(name = "tag_id", nullable = false))
+	private Set<Tag> tags = new HashSet<>();
 
 	/** EN: JPA-only. PT-BR: Apenas JPA. */
 	protected User() {
@@ -159,6 +176,14 @@ public class User {
 
 	protected void setCreatedAt(Instant createdAt) {
 		this.createdAt = createdAt;
+	}
+
+	/**
+	 * <p><b>EN:</b> Mutable collection managed by JPA; callers replace membership via clear/addAll in service layer.</p>
+	 * <p><b>PT-BR:</b> Coleção gerida pelo JPA; a camada de serviço altera membros com clear/addAll.</p>
+	 */
+	public Set<Tag> getTags() {
+		return tags;
 	}
 
 	@Override
