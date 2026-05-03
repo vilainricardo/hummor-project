@@ -22,7 +22,8 @@ import jakarta.persistence.UniqueConstraint;
 @Entity
 @Table(
 		name = "user_tag_assignments",
-		uniqueConstraints = @UniqueConstraint(name = "uk_uta_patient_tag", columnNames = {"patient_id", "tag_id"}))
+		uniqueConstraints =
+				@UniqueConstraint(name = "uk_uta_patient_tag_assigner", columnNames = {"patient_id", "tag_id", "assigned_by_user_id"}))
 public class UserTagAssignment {
 
 	@Id
@@ -83,9 +84,13 @@ public class UserTagAssignment {
 		return tag == null ? null : tag.getId();
 	}
 
+	private UUID assignedByIdOrNull() {
+		return assignedBy == null ? null : assignedBy.getId();
+	}
+
 	/**
-	 * <p><b>EN:</b> Stable business key ({@code patient} + {@code tag}) so {@link User} can use a persistent {@link java.util.Set}.</p>
-	 * <p><b>PT-BR:</b> Chave estável paciente+tag para o {@link User} usar um {@link java.util.Set} persistido pelo JPA.</p>
+	 * <p><b>EN:</b> Stable business key ({@code patient} + {@code tag} + assigner) for a persistent {@link java.util.Set}.</p>
+	 * <p><b>PT-BR:</b> Chave paciente+etiqueta+atribuidor para o {@link User} usar um {@link java.util.Set} persistido pelo JPA.</p>
 	 */
 	@Override
 	public boolean equals(Object o) {
@@ -96,11 +101,13 @@ public class UserTagAssignment {
 			return false;
 		}
 		UserTagAssignment that = (UserTagAssignment) o;
-		return Objects.equals(patientIdOrNull(), that.patientIdOrNull()) && Objects.equals(tagIdOrNull(), that.tagIdOrNull());
+		return Objects.equals(patientIdOrNull(), that.patientIdOrNull())
+				&& Objects.equals(tagIdOrNull(), that.tagIdOrNull())
+				&& Objects.equals(assignedByIdOrNull(), that.assignedByIdOrNull());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(patientIdOrNull(), tagIdOrNull());
+		return Objects.hash(patientIdOrNull(), tagIdOrNull(), assignedByIdOrNull());
 	}
 }

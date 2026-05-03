@@ -32,8 +32,6 @@ public enum ApiProblemCode {
 	ASSIGNING_ACTOR_NOT_DOCTOR,
 	/** EN: Patient-only tag links; target account is clinician. PT-BR: Etiquetas só para paciente; conta alvo é clínico. */
 	TAG_ASSIGNMENT_PATIENT_ONLY,
-	/** EN: Patient tag attributed by another clinician. PT-BR: Etiqueta já atribuída por outro clínico. */
-	TAG_HELD_BY_OTHER_CLINICIAN,
 	/** EN: Unhandled server failure. PT-BR: Falha interna não tratada. */
 	INTERNAL_ERROR
 }

@@ -25,7 +25,6 @@ import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
 import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
-import com.rb.multi.agent.exception.TagHeldByOtherClinicianException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -168,17 +167,6 @@ public class UserService {
 				userRepository.findById(assignedByDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assignedByDoctorId));
 		if (!assigningDoctor.isDoctor()) {
 			throw new AssigningActorNotDoctorException(assigningDoctor.getCode());
-		}
-
-		Set<UUID> catalogueIdsHeldByOthers =
-				entity.getTagAssignments().stream()
-						.filter(a -> !assignedByDoctorId.equals(a.getAssignedBy().getId()))
-						.map(a -> a.getTag().getId())
-						.collect(Collectors.toSet());
-		for (UUID catalogueId : uniqueOrdered) {
-			if (catalogueIdsHeldByOthers.contains(catalogueId)) {
-				throw new TagHeldByOtherClinicianException(catalogueId);
-			}
 		}
 
 		Map<UUID, Tag> byId;

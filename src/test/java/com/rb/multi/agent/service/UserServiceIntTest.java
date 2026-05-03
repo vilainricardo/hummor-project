@@ -29,7 +29,6 @@ import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
 import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
-import com.rb.multi.agent.exception.TagHeldByOtherClinicianException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -429,27 +428,36 @@ class UserServiceIntTest {
 	}
 
 	@Test
-	@DisplayName("conflito: segundo médico não pode incluir no seu slice etiqueta já atribuída por outro médico ao mesmo paciente")
-	void forbidden_secondClinicClaimsTag_ownedByPeer() {
-		var sharedCatalogueCeiling = tagRepository.save(new Tag("peer-held-one", null, TagCategory.SLEEP));
-		var ownOther = tagRepository.save(new Tag("peer-own-two", null, TagCategory.SLEEP));
+	@DisplayName("dois médicos: mesma etiqueta de catálogo ⇒ duas linhas de atribuição; paciente vê etiqueta única")
+	void sharedCatalogueTag_twoClinicians_twoAssignments_oneDistinctTag() {
+		var shared = tagRepository.save(new Tag("peer-shared-one", null, TagCategory.SLEEP));
 		var docFirst = userRepository.save(new User("doc-peer-1st", true));
 		var docSecond = userRepository.save(new User("doc-peer-2nd", true));
-		var patient = userService.create(createBase("p-peer-h", false));
+		var patient = userService.create(createBase("p-peer-share", false));
 
-		userService.update(patient.getId(), write("p-peer-h", false, List.of(sharedCatalogueCeiling.getId()), docFirst.getId()));
+		userService.update(patient.getId(), write("p-peer-share", false, List.of(shared.getId()), docFirst.getId()));
+		userService.update(patient.getId(), write("p-peer-share", false, List.of(shared.getId()), docSecond.getId()));
 
-		assertThatThrownBy(
-						() -> userService.update(
-								patient.getId(),
-								write(
-										"p-peer-h",
-										false,
-										List.of(sharedCatalogueCeiling.getId(), ownOther.getId()),
-										docSecond.getId())))
-				.isInstanceOfSatisfying(
-						TagHeldByOtherClinicianException.class,
-						ex -> assertThat(ex.catalogueTagId()).isEqualTo(sharedCatalogueCeiling.getId()));
+		User readBack = userService.findById(patient.getId()).orElseThrow();
+		assertThat(readBack.getTagAssignments()).hasSize(2);
+		assertThat(readBack.getTags()).hasSize(1).extracting(Tag::getId).containsExactly(shared.getId());
+	}
+
+	@Test
+	@DisplayName("dois médicos com mesma tag: primeiro limpa fatia; segundo mantém ⇒ paciente ainda tem a etiqueta")
+	void sharedTag_firstClearsSlice_secondKeepsDistinctUnion() {
+		var shared = tagRepository.save(new Tag("peer-rel-gone", null, TagCategory.SLEEP));
+		var docFirst = userRepository.save(new User("doc-rel-a", true));
+		var docSecond = userRepository.save(new User("doc-rel-b", true));
+		var patient = userService.create(createBase("p-peer-rel", false));
+
+		userService.update(patient.getId(), write("p-peer-rel", false, List.of(shared.getId()), docFirst.getId()));
+		userService.update(patient.getId(), write("p-peer-rel", false, List.of(shared.getId()), docSecond.getId()));
+		userService.update(patient.getId(), write("p-peer-rel", false, List.of(), docFirst.getId()));
+
+		User readBack = userService.findById(patient.getId()).orElseThrow();
+		assertThat(readBack.getTagAssignments()).hasSize(1);
+		assertThat(readBack.getTags()).hasSize(1).extracting(Tag::getId).containsExactly(shared.getId());
 	}
 
 	@Test

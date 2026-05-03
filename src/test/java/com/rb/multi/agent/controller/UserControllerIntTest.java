@@ -441,15 +441,15 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT … — segunda manifestação médica tenta ficar dona de etiqueta já atribuída por outro → 409")
-	void update_conflict_tagHeldByOtherClinician_returns409() throws Exception {
+	@DisplayName("PUT … — dois médicos atribuem a mesma tag; GET deduplica para uma entrada visível")
+	void update_twoCliniciansSameCatalogueTag_patientSeesOneDistinctTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var held = tagRepository.save(new com.rb.multi.agent.entity.Tag("held-by-a", null, TagCategory.SLEEP));
-		User doctorA = userRepository.save(new User("doc-own-a", true));
-		User doctorB = userRepository.save(new User("doc-own-b", true));
+		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("shared-by-two", null, TagCategory.SLEEP));
+		User doctorA = userRepository.save(new User("doc-share-a", true));
+		User doctorB = userRepository.save(new User("doc-share-b", true));
 		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-hold-u", false))))
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-share-u", false))))
 						.andExpect(status().isCreated())
 						.andReturn();
 		UUID pid =
@@ -462,17 +462,62 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 								put("/api/v1/users/{id}", pid),
 								objectMapper.writeValueAsString(
 										userUpdatePayload(
-												"bd-hold-u", List.of(held.getId()), false, doctorA.getId()))))
+												"bd-share-u", List.of(shared.getId()), false, doctorA.getId()))))
 				.andExpect(status().isOk());
-
 		mockMvc.perform(
 						json(
 								put("/api/v1/users/{id}", pid),
 								objectMapper.writeValueAsString(
 										userUpdatePayload(
-												"bd-hold-u", List.of(held.getId()), false, doctorB.getId()))))
-				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("TAG_HELD_BY_OTHER_CLINICIAN"));
+												"bd-share-u", List.of(shared.getId()), false, doctorB.getId()))))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.tags", hasSize(1)))
+				.andExpect(jsonPath("$.tags[0].id").value(shared.getId().toString()));
+	}
+
+	@Test
+	@DisplayName("PUT … — médico A remove fatia mas B mantém a mesma tag; paciente continua a ver a tag")
+	void update_firstClearsSlice_secondKeepsSharedTag_patientStillSeesTag() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("slice-shared", null, TagCategory.SLEEP));
+		User doctorA = userRepository.save(new User("doc-slc-a", true));
+		User doctorB = userRepository.save(new User("doc-slc-b", true));
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-slc-u", false))))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID pid =
+				UUID.fromString(
+						created.getResponse().getHeader("Location").substring(
+								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload("bd-slc-u", List.of(shared.getId()), false, doctorA.getId()))))
+				.andExpect(status().isOk());
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload("bd-slc-u", List.of(shared.getId()), false, doctorB.getId()))))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(userUpdatePayload("bd-slc-u", List.of(), false, doctorA.getId()))))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.tags", hasSize(1)))
+				.andExpect(jsonPath("$.tags[0].id").value(shared.getId().toString()));
 	}
 
 	@Test

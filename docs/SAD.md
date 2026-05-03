@@ -467,23 +467,23 @@ CREATE TABLE tags (
 
 ---
 
-# 7.4 ENTIDADE: PATIENT_TAG_CONFIG
+# 7.4 ENTIDADE: USER_TAG_ASSIGNMENTS (ATRIBUIÇÃO PACIENTE–TAG)
+
+> **Nota de alinhamento:** versões anteriores deste SAD descreviam `patient_tag_config` com chave `(patient_id, doctor_id, tag_id)` e campo `is_critical`. A **implementação corrente** da API MindSignal persiste atribuições na tabela abaixo: **no máximo uma linha por terno (paciente, tag de catálogo, médico atribuídor)**, com **quem atribuiu** e **quando**. Dois médicos **podem** atribuir a **mesma** tag de catálogo ao mesmo paciente (duas linhas distintas); ao **ler** o perfil ou validar eventos, usa-se a **união deduplicada** por `tag_id` (cada etiqueta mostrada uma vez). Cada médico mantém a sua **fatia** de até cinco tags por pedido de atualização. O campo `is_critical` (FR-009 / FLW-013) **ainda não** existe neste esquema; quando for introduzido, deverá documentar-se como coluna ou entidade satélite.
 
 ---
 
 ```sql
-CREATE TABLE patient_tag_config (
-    id UUID PRIMARY KEY,
-
+CREATE TABLE user_tag_assignments (
+    id UUID NOT NULL PRIMARY KEY,
     patient_id UUID NOT NULL,
-    doctor_id UUID NOT NULL,
     tag_id UUID NOT NULL,
-
-    is_critical BOOLEAN DEFAULT FALSE,
-
-    created_at TIMESTAMP DEFAULT NOW(),
-
-    UNIQUE (patient_id, doctor_id, tag_id)
+    assigned_by_user_id UUID NOT NULL,
+    assigned_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (patient_id, tag_id, assigned_by_user_id),
+    FOREIGN KEY (patient_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+    FOREIGN KEY (assigned_by_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 ```
 
@@ -493,16 +493,25 @@ CREATE TABLE patient_tag_config (
 
 👉 Separação entre:
 
-* definição global (tags)
-* contexto clínico (configuração)
+* definição global (`tags`)
+* contexto clínico (atribuição auditada por paciente e por clínico)
+
+Regras de negócio na API (resumo):
+
+* **Limite por pedido:** até **cinco** identificadores de tag **distintos** em `tagIds` por `PUT` quando se substitui a fatia de um médico (`assignedByDoctorId`).
+* **Substituição por fatia:** o pedido substitui apenas as linhas desse paciente com `assigned_by_user_id` igual ao médico indicado; atribuições de outros médicos mantêm-se.
+* **União visível (deduplicada):** o conjunto apresentado ao paciente é o conjunto **único** de `tag_id` sobre todas as linhas; vários médicos podem contribuir com a mesma tag de catálogo, mas o cliente vê essa etiqueta **uma vez**.
+* **Mesma tag, vários médicos:** permitido — persistem-se linhas separadas; remover a fatia de um médico **não** remove a tag para o paciente se outro médico a mantiver na sua fatia.
+* **`assignedByDoctorId` nulo:** permitido apenas como **no-op** quando `tagIds` coincide exatamente com a união já persistida; caso contrário → `TAG_ASSIGNMENT_DOCTOR_REQUIRED`.
+* **Alvo médico:** contas com `is_doctor = true` no utilizador alvo **não** recebem tags de catálogo por este fluxo (`TAG_ASSIGNMENT_PATIENT_ONLY`).
 
 ---
 
 ## Benefícios
 
-* Flexibilidade por paciente
-* Sem duplicação de tags
-* Controle de criticidade contextual
+* Proveniência (`assigned_at`, clínico responsável pela atribuição daquele par paciente–tag **na fatia desse médico**)
+* Consistência com migração Flyway e testes de integração
+* Base para evolução (ex.: criticidade por tag) sem duplicar linhas no catálogo `tags`
 
 ---
 
@@ -574,10 +583,9 @@ erDiagram
 USER ||--o{ EVENT : creates
 USER ||--o{ RELATIONSHIP : participates
 
-TAG ||--o{ PATIENT_TAG_CONFIG : defines
-USER ||--o{ PATIENT_TAG_CONFIG : configures
-
-PATIENT_TAG_CONFIG ||--o{ EVENT : references
+TAG ||--o{ USER_TAG_ASSIGNMENT : catalogued
+USER ||--o{ USER_TAG_ASSIGNMENT : patient
+USER ||--o{ USER_TAG_ASSIGNMENT : assigned_by
 ```
 
 ---
@@ -665,8 +673,8 @@ Usuário seleciona uma tag no app
 
 ## Preconditions
 
-* Paciente possui relacionamento ativo com médico
-* Existe configuração em `patient_tag_config` para a tag
+* Paciente possui relacionamento ativo com médico (quando a política de produto o exigir)
+* Existe atribuição em `user_tag_assignments` para o par (patient_id, tag_id) — ou seja, a tag faz parte da **união** configurada para o paciente
 * Tag pertence ao catálogo global (`tags`)
 
 ---
@@ -682,9 +690,8 @@ Usuário seleciona uma tag no app
 
 1. Receber requisição de registro de evento
 2. Validar existência da tag em `tags`
-3. Validar que a tag está configurada em `patient_tag_config`:
+3. Validar que existe linha em `user_tag_assignments` com match (patient_id, tag_id)
 
-   * match: (patient_id, tag_id)
 4. Criar evento:
 
    * type = TAG
@@ -773,74 +780,91 @@ Usuário seleciona uma tag no app
 
 ## Objetivo
 
-Permitir que o médico configure quais tags estarão disponíveis para um paciente.
+Permitir que **cada** médico configure **a sua fatia** de tags de catálogo para um paciente, com limite **por pedido** e **substituição apenas dessa fatia**, mantendo a **união** de tags visíveis ao paciente.
 
 ---
 
 ## Trigger
 
-Médico seleciona tags para paciente
+Médico grava as tags do paciente (ex.: `PUT /api/v1/users/{patientId}` com `UserWriteRequest` contendo `tagIds` e, quando aplicável, `assignedByDoctorId`).
 
 ---
 
 ## Preconditions
 
-* Relacionamento ativo
-* Tag existe no catálogo global
+* Relacionamento ativo (conforme política de produto)
+* Tags existem no catálogo global (`tags`)
+* Utilizador alvo **não** é cenário válido para atribuição de tags de catálogo quando tratado como conta médica no alvo (`is_doctor = true`) — ver erro de negócio correspondente
+* Para alterar o conjunto efetivo (não apenas repetir a união já persistida): corpo deve identificar explicitamente o médico cuja fatia está a ser substituída (`assignedByDoctorId`)
 
 ---
 
 ## Input
 
-* `doctor_id`
-* `patient_id`
-* Lista de `tag_id`
+* `patient_id` (path)
+* `tagIds`: lista com **no máximo cinco** identificadores de tag **distintos** por pedido
+* `assignedByDoctorId`: UUID do médico responsável pela fatia (obrigatório sempre que o pedido não seja o no-op da união global descrito abaixo)
 
 ---
 
 ## Main Path
 
-1. Receber lista de tags
-2. Validar existência das tags em `tags`
-3. Validar limite máximo (≤ 5 tags)
-4. Para cada tag:
-
-   * Inserir em `patient_tag_config`
-5. Confirmar operação
+1. Receber pedido; validar existência das tags em `tags` e tamanho da lista (≤ 5 distintos)
+2. Se `assignedByDoctorId` estiver ausente: comparar o conjunto em `tagIds` com a **união** de todas as `tag_id` já presentes em `user_tag_assignments` para o paciente; se forem iguais → **no-op**; senão → rejeitar (`TAG_ASSIGNMENT_DOCTOR_REQUIRED`)
+3. Com `assignedByDoctorId` válido e ator com capacidade médica:
+   * Remover de `user_tag_assignments` todas as linhas desse `patient_id` com `assigned_by_user_id` igual ao médico indicado
+   * Inserir linhas `(patient_id, tag_id, assigned_by_user_id, assigned_at)` para cada id em `tagIds` (o mesmo `tag_id` pode coexistir noutra linha com **outro** `assigned_by_user_id`)
+4. Responder com o perfil do utilizador refletindo a **união deduplicada** de `tag_id` sobre todas as linhas
 
 ---
 
 ## Alternate Paths
 
-### A1 — Tag já configurada
+### A1 — `tagIds` vazio com `assignedByDoctorId` definido
 
-* Ignorar duplicata (idempotência)
+* Remove **toda** a fatia desse médico para o paciente; outras fatias mantêm-se
 
 ---
 
-### A2 — Atualização parcial
+### A2 — Idempotência na mesma fatia
 
-* Inserir apenas novas
+* Reenviar o mesmo conjunto (até cinco tags) para o mesmo `assignedByDoctorId` → estado final equivalente
+
+---
+
+### A3 — Duplicados no payload
+
+* Tratar como um único conjunto de ids distintos antes de aplicar o limite de cinco
 
 ---
 
 ## Error Paths
 
-### E1 — Tag inexistente
+### E1 — Tag inexistente ou referência inválida
 
-* Rejeitar operação
-* Retornar erro 400
-
----
-
-### E2 — Limite excedido (>5)
-
-* Rejeitar operação
-* Retornar erro de negócio
+* Rejeitar (ex.: `TAG_REFERENCES_INVALID`, 400)
 
 ---
 
-### E3 — Falha DB
+### E2 — Mais de cinco tags distintas no pedido
+
+* Rejeitar validação (bean validation / `INVALID_ARGUMENT`)
+
+---
+
+### E3 — Atribuição indevida a conta médica como alvo
+
+* `TAG_ASSIGNMENT_PATIENT_ONLY`
+
+---
+
+### E4 — Médico atribuídor inválido ou não encontrado
+
+* `ASSIGNING_ACTOR_NOT_DOCTOR` / `ASSIGNING_DOCTOR_NOT_FOUND`
+
+---
+
+### E5 — Falha DB
 
 * Retry (3x)
 * Se falhar:
@@ -853,26 +877,27 @@ Médico seleciona tags para paciente
 ## System Failure Decisions
 
 * Fail-closed
-* Operação transacional
+* Operação transacional na fatia
 * Rollback completo em erro
 
 ---
 
 ## Output
 
-* Configuração aplicada
+* Fatia do médico atualizada; paciente vê a **união** de todas as fatias
 
 ---
 
 ## Data Changes
 
-* Insert em `patient_tag_config`
+* `DELETE` + `INSERT` em `user_tag_assignments` **restritos** ao par (`patient_id`, `assigned_by_user_id` = médico da fatia)
 
 ---
 
 ## Postconditions
 
-* Tags disponíveis para o paciente
+* Cada combinação (paciente, tag, médico atribuídor) no máximo **uma** linha (`UNIQUE (patient_id, tag_id, assigned_by_user_id)`)
+* Tags utilizáveis pelo paciente em registo de eventos = existe **pelo menos** uma linha em `user_tag_assignments` com esse `tag_id` para o paciente
 
 ---
 
@@ -886,6 +911,8 @@ Médico seleciona tags para paciente
 
 Permitir que o médico marque uma tag como crítica para um paciente específico.
 
+> **Estado da implementação (API atual):** a tabela `user_tag_assignments` **não** inclui ainda o atributo `is_critical`. Este fluxo permanece como **especificação alvo**; a persistência deverá alinhar-se via migração (coluna em `user_tag_assignments`, tabela satélite ou equivalente). Até lá, FLW-014 não pode basear-se numa coluna real.
+
 ---
 
 ## Trigger
@@ -896,14 +923,15 @@ Médico marca tag como crítica
 
 ## Preconditions
 
-* Tag já configurada em `patient_tag_config`
+* Existe atribuição em `user_tag_assignments` para o par (`patient_id`, `tag_id`) — i.e. a tag está na união configurada para o paciente
+* (Quando existir no esquema) política de negócio define quem pode alterar criticidade daquela fatia
 
 ---
 
 ## Input
 
 * `patient_id`
-* `doctor_id`
+* `doctor_id` (ou `assigned_by` relevante à política)
 * `tag_id`
 * `is_critical = true`
 
@@ -911,15 +939,15 @@ Médico marca tag como crítica
 
 ## Main Path
 
-1. Validar existência do registro em `patient_tag_config`
-2. Atualizar campo `is_critical = true`
+1. Validar existência do registro em `user_tag_assignments` para (patient_id, tag_id)
+2. Quando o esquema suportar: atualizar ou criar registo de criticidade contextual
 3. Confirmar operação
 
 ---
 
 ## Alternate Paths
 
-### A1 — Tag não configurada
+### A1 — Tag não atribuída ao paciente
 
 * Rejeitar operação
 
@@ -964,19 +992,19 @@ Médico marca tag como crítica
 
 ## Output
 
-* Tag marcada como crítica
+* Tag marcada como crítica (quando persistido)
 
 ---
 
 ## Data Changes
 
-* Update em `patient_tag_config`
+* Update ou insert em estrutura a definir (extensão de `user_tag_assignments` ou entidade dedicada)
 
 ---
 
 ## Postconditions
 
-* Tag passa a gerar eventos críticos
+* Tag passa a ser considerada em fluxos de alerta crítico (FLW-014), quando a persistência existir
 
 ---
 
@@ -988,7 +1016,7 @@ Médico marca tag como crítica
 
 ## Objetivo
 
-Detectar eventos críticos com base na configuração contextual (patient_tag_config)
+Detectar eventos críticos com base na configuração contextual da tag para o paciente.
 
 ---
 
@@ -1008,28 +1036,28 @@ Evento do tipo TAG criado
 
 1. Receber evento
 2. Validar tipo = TAG
-3. Consultar `patient_tag_config`:
+3. Consultar `user_tag_assignments`:
 
    * match: (patient_id, tag_id)
-4. Verificar `is_critical = true`
-5. Se verdadeiro:
+4. Confirmar que a tag está atribuída ao paciente; em seguida, **quando existir persistência de criticidade** (ver FLW-013), verificar `is_critical = true`
+5. Se crítico:
 
    * encaminhar para pipeline de alerta
-6. Se falso:
+6. Se não crítico ou criticidade ainda não modelada:
 
-   * encerrar fluxo
+   * encerrar fluxo de alerta crítico (comportamento atual até migração FR-009)
 
 ---
 
 ## Alternate Paths
 
-### A1 — Tag não configurada
+### A1 — Tag não atribuída ao paciente
 
 * Ignorar evento para alerta
 
 ---
 
-### A2 — Configuração ausente
+### A2 — Atribuição ausente
 
 * Log WARNING
 * Encerrar fluxo

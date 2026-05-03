@@ -35,6 +35,14 @@ Este documento reúne decisões, diretrizes e nuances que **não fazem parte do 
 - A mesma conta pode **também** ter capacidade de **médico** (`is_doctor`): não se modela “ou paciente ou médico” como tipos excludentes.
 - Autorização de rotas de profissional deve assentar em **flag/capacidade médica**, não num `type` mutuamente exclusivo com paciente.
 
+### 1.6 Tags por paciente (multi‑médico, API)
+
+- Persistência atual: **`user_tag_assignments`** — no máximo **uma** entrada por terno (paciente, tag de catálogo, médico atribuídor); inclui **quem atribuiu** e **quando**. Dois médicos **podem** referir a mesma tag de catálogo para o mesmo paciente (duas linhas).
+- Limite documentado/SAD: até **cinco** identificadores de tag **distintos por pedido** ao substituir a **fatia** de um dado médico (`assignedByDoctorId`); outras fatias permanecem; limpar a fatia de um médico **não** remove a tag se outro médico a mantiver.
+- O paciente e as leituras agregadas devem assumir a **união deduplicada** por `tag_id` sobre todas as linhas (a mesma etiqueta não aparece duplicada na lista devolvida ao cliente).
+- **`assignedByDoctorId` omitido:** só comportamento válido quando o conjunto enviado **reproduz** essa união deduplicada já persistida (**no-op**); caso contrário indica erro de negócio (médico obrigatório).
+- Contas com **`is_doctor = true` no utilizador alvo** não são destino válido para este tipo de atribuição de tags de catálogo (`TAG_ASSIGNMENT_PATIENT_ONLY`).
+
 ---
 
 ## 2. Diretrizes de UX (Alto Nível)
