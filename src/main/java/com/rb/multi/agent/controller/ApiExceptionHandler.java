@@ -24,6 +24,7 @@ import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
 import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
+import com.rb.multi.agent.exception.TagHeldByOtherClinicianException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
@@ -170,6 +171,19 @@ public class ApiExceptionHandler {
 				HttpStatus.BAD_REQUEST,
 				ApiProblemCode.TAG_ASSIGNMENT_PATIENT_ONLY,
 				msg("error.user.tagAssignment.patientOnly", ex.targetCode()),
+				null);
+	}
+
+	/** EN: Acting clinician cites another clinician's attribution. PT-BR: Etiqueta já atribuída por outro médico. */
+	@ExceptionHandler(TagHeldByOtherClinicianException.class)
+	public ResponseEntity<ApiErrorResponse> tagHeldByOtherClinician(
+			TagHeldByOtherClinicianException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.CONFLICT,
+				ApiProblemCode.TAG_HELD_BY_OTHER_CLINICIAN,
+				msg("error.user.tagAssignment.heldByOtherClinician", ex.catalogueTagId().toString()),
 				null);
 	}
 

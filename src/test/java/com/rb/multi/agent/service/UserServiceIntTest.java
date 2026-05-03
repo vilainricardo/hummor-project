@@ -3,8 +3,14 @@ package com.rb.multi.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,9 +25,11 @@ import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.entity.TagCategory;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
+import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
 import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
+import com.rb.multi.agent.exception.TagHeldByOtherClinicianException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -51,6 +59,9 @@ class UserServiceIntTest {
 
 	@Autowired
 	private TagRepository tagRepository;
+
+	@Autowired
+	private Validator jakartaValidator;
 
 	@BeforeEach
 	void purge() {
@@ -127,8 +138,8 @@ class UserServiceIntTest {
 	}
 
 	@Test
-	@DisplayName("update com tagIds vazio remove todas as associações libertadas antes visíveis")
-	void update_clearTagIds_dropsAllAssociations() {
+	@DisplayName("slice: tagIds vazio + médico ⇒ remove só as etiquetas daquele clínico (único médico ⇒ paciente fica sem tags)")
+	void update_clearTagIds_whenSoleClearingDoctor_dropsAssignments() {
 		var t = tagRepository.save(new Tag("solo", null, TagCategory.SLEEP));
 		var doc = userRepository.save(new User("doc-clear", true));
 
@@ -141,6 +152,26 @@ class UserServiceIntTest {
 		userService.update(u.getId(), write("p-clear", false, List.of(), doc.getId()));
 
 		assertThat(userService.findById(u.getId()).orElseThrow().getTags()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("slice: médico A limpa a sua lista; etiquetas mantidas pelo médico B permanecem no paciente")
+	void update_clearOneClinicianSlice_preservesAssignmentsFromPeers() {
+		var tagAonly = tagRepository.save(new Tag("solo-a-own", null, TagCategory.SLEEP));
+		var tagBonly = tagRepository.save(new Tag("solo-b-own", null, TagCategory.SLEEP));
+		var docA = userRepository.save(new User("doc-a-slice", true));
+		var docB = userRepository.save(new User("doc-b-slice", true));
+
+		var u = userService.create(createBase("p-slices", false));
+		userService.update(u.getId(), write("p-slices", false, List.of(tagAonly.getId()), docA.getId()));
+		userService.update(u.getId(), write("p-slices", false, List.of(tagBonly.getId()), docB.getId()));
+		assertThat(userService.findById(u.getId()).orElseThrow().getTags()).hasSize(2);
+
+		userService.update(u.getId(), write("p-slices", false, List.of(), docA.getId()));
+
+		User readBack = userService.findById(u.getId()).orElseThrow();
+		assertThat(readBack.getTags()).hasSize(1);
+		assertThat(readBack.getTags()).extracting(Tag::getId).containsExactly(tagBonly.getId());
 	}
 
 	@Test
@@ -171,15 +202,19 @@ class UserServiceIntTest {
 	}
 
 	@Test
-	@DisplayName("assignedByDoctorId refere paciente não-médico → AssigningActorNotDoctorException")
+	@DisplayName("assignedByDoctorId resolve paciente sem perfil médico e há mutação na fatia ⇒ AssigningActorNotDoctorException")
 	void update_actorNotDoctor_throws() {
 		var tagged = tagRepository.save(new Tag("need-real-doc", null, TagCategory.OTHER));
+		var extraForFaker = tagRepository.save(new Tag("faker-cant-act", null, TagCategory.SLEEP));
 		var doc = userRepository.save(new User("doc-real", true));
 		var faker = userRepository.save(new User("fake-doc", false));
 		var patient = userService.create(createBase("p-actor", false));
 		userService.update(patient.getId(), write("p-actor", false, List.of(tagged.getId()), doc.getId()));
 
-		assertThatThrownBy(() -> userService.update(patient.getId(), write("p-actor", false, List.of(), faker.getId())))
+		assertThatThrownBy(
+						() -> userService.update(
+								patient.getId(),
+								write("p-actor", false, List.of(extraForFaker.getId()), faker.getId())))
 				.isInstanceOf(AssigningActorNotDoctorException.class);
 	}
 
@@ -312,5 +347,184 @@ class UserServiceIntTest {
 
 		assertThat(userService.findAll()).hasSize(3);
 		userService.findAll().forEach(u -> assertThat(u.getTags()).isNotNull());
+	}
+
+	private List<Tag> saveTags(String prefix, int count, TagCategory category) {
+		List<Tag> out = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			out.add(tagRepository.save(new Tag(prefix + "-" + i, null, category)));
+		}
+		return out;
+	}
+
+	@Test
+	@DisplayName("borda: assignedByDoctorId inexistente e tagIds não vazio ⇒ AssigningDoctorNotFoundException")
+	void edge_assigningDoctorUnknown_throws() {
+		var t = tagRepository.save(new Tag("edge-ghost-doc", null, TagCategory.OTHER));
+		var phantomTag = tagRepository.save(new Tag("edge-ghost-new", null, TagCategory.SLEEP));
+		var doc = userRepository.save(new User("doc-edge-ghost", true));
+		var p = userService.create(createBase("p-ghost-assigner", false));
+		userService.update(p.getId(), write("p-ghost-assigner", false, List.of(t.getId()), doc.getId()));
+		UUID stranger = UUID.randomUUID();
+		assertThatThrownBy(
+						() -> userService.update(
+								p.getId(),
+								write(
+										"p-ghost-assigner",
+										false,
+										List.of(phantomTag.getId()),
+										stranger)))
+				.isInstanceOfSatisfying(
+						AssigningDoctorNotFoundException.class,
+						ex -> assertThat(ex.doctorId()).isEqualTo(stranger));
+	}
+
+	@Test
+	@DisplayName("borda: mistura de tagIds válidos e inexistentes devolve apenas os desconhecidos na excepção")
+	void edge_knownAndUnknownTagIds_throwsListingUnknownOnly() {
+		var catalog = tagRepository.save(new Tag("edge-known", null, TagCategory.SLEEP));
+		var doc = userRepository.save(new User("doc-mixed-tags", true));
+		var patient = userService.create(createBase("p-mixed-tags", false));
+		UUID phantomA = UUID.randomUUID();
+		UUID phantomB = UUID.randomUUID();
+		assertThatThrownBy(
+						() -> userService.update(
+								patient.getId(),
+								write(
+										"p-mixed-tags",
+										false,
+										List.of(catalog.getId(), phantomA, phantomB),
+										doc.getId())))
+				.isInstanceOfSatisfying(
+						UnknownTagReferencesException.class,
+						ex -> {
+							assertThat(ex.getUnknownIds()).containsExactlyInAnyOrder(phantomA, phantomB);
+						});
+	}
+
+	@Test
+	@DisplayName("borda: até cinco etiquetas distintas por pedido/manifestação por médico (slice desse médico)")
+	void edge_exactlyFiveDistinctTagIds_perClinicianUpdate_accepted() {
+		var tags = saveTags("five", 5, TagCategory.OTHER);
+		var doc = userRepository.save(new User("doc-five-cap", true));
+		var ids = tags.stream().map(Tag::getId).toList();
+		var patient = userService.create(createBase("p-five-cap", false));
+		userService.update(patient.getId(), write("p-five-cap", false, ids, doc.getId()));
+		assertThat(userService.findById(patient.getId()).orElseThrow().getTags()).hasSize(5);
+	}
+
+	@Test
+	@DisplayName("vários médicos: cada um até 5 distintos ⇒ paciente acumula a união (ex.: dois médicos ⇒ até 10 tags)")
+	void aggregation_twoDoctorsFiveEach_patientShowsTenDistinctTags() {
+		var batchA = saveTags("mA", 5, TagCategory.SLEEP);
+		var batchB = saveTags("mB", 5, TagCategory.OTHER);
+		var docA = userRepository.save(new User("doc-mA-5", true));
+		var docB = userRepository.save(new User("doc-mB-5", true));
+		var patient = userService.create(createBase("p-accum", false));
+
+		userService.update(patient.getId(), write("p-accum", false, batchA.stream().map(Tag::getId).toList(), docA.getId()));
+		userService.update(patient.getId(), write("p-accum", false, batchB.stream().map(Tag::getId).toList(), docB.getId()));
+
+		assertThat(userService.findById(patient.getId()).orElseThrow().getTags()).hasSize(10);
+	}
+
+	@Test
+	@DisplayName("conflito: segundo médico não pode incluir no seu slice etiqueta já atribuída por outro médico ao mesmo paciente")
+	void forbidden_secondClinicClaimsTag_ownedByPeer() {
+		var sharedCatalogueCeiling = tagRepository.save(new Tag("peer-held-one", null, TagCategory.SLEEP));
+		var ownOther = tagRepository.save(new Tag("peer-own-two", null, TagCategory.SLEEP));
+		var docFirst = userRepository.save(new User("doc-peer-1st", true));
+		var docSecond = userRepository.save(new User("doc-peer-2nd", true));
+		var patient = userService.create(createBase("p-peer-h", false));
+
+		userService.update(patient.getId(), write("p-peer-h", false, List.of(sharedCatalogueCeiling.getId()), docFirst.getId()));
+
+		assertThatThrownBy(
+						() -> userService.update(
+								patient.getId(),
+								write(
+										"p-peer-h",
+										false,
+										List.of(sharedCatalogueCeiling.getId(), ownOther.getId()),
+										docSecond.getId())))
+				.isInstanceOfSatisfying(
+						TagHeldByOtherClinicianException.class,
+						ex -> assertThat(ex.catalogueTagId()).isEqualTo(sharedCatalogueCeiling.getId()));
+	}
+
+	@Test
+	@DisplayName("borda: seis IDs distintos no payload → IllegalArgument mesmo sem passar pela API HTTP")
+	void edge_sixDistinctTagIds_throwsIllegalArgument() {
+		var tags = saveTags("six", 6, TagCategory.SLEEP);
+		var ids = tags.stream().map(Tag::getId).toList();
+		var doc = userRepository.save(new User("doc-six-reject", true));
+		var patient = userService.create(createBase("p-six-reject", false));
+		assertThatThrownBy(() -> userService.update(patient.getId(), write("p-six-reject", false, ids, doc.getId())))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("5");
+	}
+
+	@Test
+	@DisplayName("borda: limpar tags existentes sem assignedByDoctorId → TagAssignmentDoctorRequiredException")
+	void edge_clearTagsWithoutDoctor_throws() {
+		var tag = tagRepository.save(new Tag("edge-clear-rule", null, TagCategory.SLEEP));
+		var doc = userRepository.save(new User("doc-clear-edge", true));
+		var patient = userService.create(createBase("p-clear-rule", false));
+		userService.update(patient.getId(), write("p-clear-rule", false, List.of(tag.getId()), doc.getId()));
+
+		assertThatThrownBy(() -> userService.update(patient.getId(), write("p-clear-rule", false, List.of(), null)))
+				.isInstanceOf(TagAssignmentDoctorRequiredException.class);
+	}
+
+	@Test
+	@DisplayName("borda: mesmo conjunto de tags com ordem diferente no payload → noop sem médico obrigatório")
+	void edge_reorderedSameLogicalSet_skipsDoctorCheck() {
+		var tWide = tagRepository.save(new Tag("edge-wide-first", null, TagCategory.SLEEP));
+		var tNarrow = tagRepository.save(new Tag("edge-narrow-sec", null, TagCategory.SLEEP));
+		var doc = userRepository.save(new User("doc-order-edge", true));
+		var patient = userService.create(createBase("p-order-edge", false));
+		userService.update(patient.getId(), write("p-order-edge", false, List.of(tWide.getId(), tNarrow.getId()), doc.getId()));
+		userService.update(
+				patient.getId(),
+				write(
+						"p-order-edge",
+						false,
+						List.of(tNarrow.getId(), tWide.getId()),
+						null));
+		User readBack = userService.findById(patient.getId()).orElseThrow();
+		assertThat(readBack.getTags()).extracting(Tag::getId).containsExactlyInAnyOrder(tWide.getId(), tNarrow.getId());
+		assertThat(readBack.getTagAssignments()).hasSize(2);
+	}
+
+	@Test
+	@DisplayName("borda: UserWriteRequest lista com mais de 5 elementos falha Bean Validation antes do serviço")
+	void edge_validator_rejectsSixListElements() {
+		var six = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+		UserWriteRequest req =
+				new UserWriteRequest(
+						"bean-six",
+						false,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						UUID.randomUUID(),
+						six);
+		Set<ConstraintViolation<UserWriteRequest>> violations = jakartaValidator.validate(req);
+		assertThat(violations.stream().filter(v -> "tagIds".equals(v.getPropertyPath().toString())))
+				.isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("borda: getTags lista ids únicos (sem duplicação perceptível via API de leitura)")
+	void edge_findById_returnsUniqueTagIdsReadable() {
+		var lone = tagRepository.save(new Tag("edge-unique-names", null, TagCategory.SLEEP));
+		var doc = userRepository.save(new User("doc-uniq-read", true));
+		var patient = userService.create(createBase("p-uniq-read", false));
+		userService.update(patient.getId(), write("p-uniq-read", false, List.of(lone.getId()), doc.getId()));
+		Set<Tag> once = userService.findById(patient.getId()).orElseThrow().getTags();
+		assertThat(new HashSet<>(once.stream().map(Tag::getId).toList())).hasSize(once.size());
 	}
 }

@@ -8,9 +8,10 @@ import jakarta.validation.constraints.Size;
 
 /**
  * <p><b>EN:</b> Full replace payload for updates to {@link com.rb.multi.agent.entity.User}. New accounts use
- * {@link UserCreateRequest} (no {@code tagIds}). List {@code tagIds} replaces assignments (empty ⇒ none).</p>
- * <p><b>PT-BR:</b> Payload de substituição total; se o conjunto de {@code tagIds} mudar relativamente ao persistido,
- * {@code assignedByDoctorId} tem de identificar um utilizador médico; paciente com no máximo cinco etiquetas atribuídas.</p>
+ * {@link UserCreateRequest} (no {@code tagIds}). Field {@code tagIds} replaces {@strong only} the catalogue links
+ * credited to {@code assignedByDoctorId}, up to five per update; assignments from other clinicians remain on the patient.</p>
+ * <p><b>PT-BR:</b> Campo {@code tagIds} substitui apenas as etiquetas atribuídas por {@code assignedByDoctorId}
+ * (máx. 5 por pedido); etiquetas de outros médicos permanecem.</p>
  */
 public record UserWriteRequest(
 		@NotBlank(message = "{validation.user.code.blank}")

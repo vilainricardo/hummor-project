@@ -25,6 +25,7 @@ import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
 import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
+import com.rb.multi.agent.exception.TagHeldByOtherClinicianException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -125,32 +126,59 @@ public class UserService {
 	}
 
 	/**
-	 * <p><b>EN:</b> Replaces clinician assignments when {@link UserWriteRequest#tagIds()} differs from persisted state;
-	 * preserves first-seen UUID order; assigns at most five tags per patient; requires acting doctor identity.</p>
-	 * <p><b>PT-BR:</b> Substitui atribuições do clínico quando {@code tagIds} difere do estado; até cinco etiquetas por
-	 * paciente; exige médico responsável quando há alteração.</p>
+	 * <p><b>EN:</b> For {@link UserWriteRequest#assignedByDoctorId()} non-null, replaces only that clinician's slice
+	 * (max five distinct tag ids per write). With {@code assignedByDoctorId=null}, no-op iff {@code tagIds} mirrors the
+	 * full merged catalogue tag projection for the patient; otherwise callers must identify which slice to edit.</p>
+	 * <p><b>PT-BR:</b> Com {@link UserWriteRequest#assignedByDoctorId()} definido, substitui só as etiquetas daquele médico
+	 * (até cinco ids distintos por pedido). Com {@code null}, só é noop se {@code tagIds} coincidir com a união já
+	 * persistida para o paciente.</p>
 	 */
 	private void syncTags(User entity, UserWriteRequest request) {
 		List<UUID> incoming = request.tagIds();
 		LinkedHashSet<UUID> uniqueOrdered = incoming.stream().collect(Collectors.toCollection(LinkedHashSet::new));
-		Set<UUID> currentIds =
+		if (uniqueOrdered.size() > 5) {
+			throw new IllegalArgumentException("tagIds allow at most 5 distinct catalogue tag ids per clinician update");
+		}
+
+		Set<UUID> aggregateTagIds =
 				entity.getTagAssignments().stream().map(a -> a.getTag().getId()).collect(Collectors.toSet());
-		if (currentIds.equals(uniqueOrdered)) {
+		UUID assignedByDoctorId = request.assignedByDoctorId();
+
+		if (assignedByDoctorId == null) {
+			if (aggregateTagIds.equals(uniqueOrdered)) {
+				return;
+			}
+			throw new TagAssignmentDoctorRequiredException();
+		}
+
+		LinkedHashSet<UUID> sliceForDoctor =
+				entity.getTagAssignments().stream()
+						.filter(a -> assignedByDoctorId.equals(a.getAssignedBy().getId()))
+						.map(a -> a.getTag().getId())
+						.collect(Collectors.toCollection(LinkedHashSet::new));
+		if (sliceForDoctor.equals(uniqueOrdered)) {
 			return;
 		}
 
-		UUID assigningDoctorId = request.assignedByDoctorId();
-		if (assigningDoctorId == null) {
-			throw new TagAssignmentDoctorRequiredException();
-		}
-		if (entity.isDoctor()) {
+		if (entity.isDoctor() && !incoming.isEmpty()) {
 			throw new TagAssignmentPatientOnlyException(entity.getCode());
 		}
 
 		User assigningDoctor =
-				userRepository.findById(assigningDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assigningDoctorId));
+				userRepository.findById(assignedByDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assignedByDoctorId));
 		if (!assigningDoctor.isDoctor()) {
 			throw new AssigningActorNotDoctorException(assigningDoctor.getCode());
+		}
+
+		Set<UUID> catalogueIdsHeldByOthers =
+				entity.getTagAssignments().stream()
+						.filter(a -> !assignedByDoctorId.equals(a.getAssignedBy().getId()))
+						.map(a -> a.getTag().getId())
+						.collect(Collectors.toSet());
+		for (UUID catalogueId : uniqueOrdered) {
+			if (catalogueIdsHeldByOthers.contains(catalogueId)) {
+				throw new TagHeldByOtherClinicianException(catalogueId);
+			}
 		}
 
 		Map<UUID, Tag> byId;
@@ -167,7 +195,8 @@ public class UserService {
 			byId = resolved.stream().collect(Collectors.toMap(Tag::getId, t -> t, (a, b) -> a));
 		}
 
-		entity.getTagAssignments().clear();
+		entity.getTagAssignments()
+				.removeIf(a -> assignedByDoctorId.equals(a.getAssignedBy().getId()));
 		entityManager.flush();
 		Instant assignedAt = Instant.now();
 		for (UUID id : uniqueOrdered) {
