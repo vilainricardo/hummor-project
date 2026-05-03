@@ -32,3 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 .env
+
+### H2 (perfil h2 — ./data/hummor-dev.*) ###
+/data/
