@@ -22,8 +22,8 @@ import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
-import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
-import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
+import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
+import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
@@ -121,16 +121,36 @@ public class ApiExceptionHandler {
 				null);
 	}
 
-	/** EN: Tag set changed without doctor reference. PT-BR: Conjunto de tags alterado sem médico atribuídor. */
-	@ExceptionHandler(TagAssignmentDoctorRequiredException.class)
-	public ResponseEntity<ApiErrorResponse> tagAssignmentDoctorRequired(
-			TagAssignmentDoctorRequiredException ex,
+	/** EN: No matching patient tag assignment slice row. PT-BR: Linha de atribuição de etiqueta não encontrada. */
+	@ExceptionHandler(PatientTagAssignmentNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> patientTagAssignmentNotFound(
+			PatientTagAssignmentNotFoundException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.NOT_FOUND,
+				ApiProblemCode.PATIENT_TAG_ASSIGNMENT_NOT_FOUND,
+				msg(
+						"error.user.tagAssignment.notFound",
+						ex.patientId(),
+						ex.assignedByDoctorId(),
+						ex.tagId()),
+				null);
+	}
+
+	/** EN: Slice capacity reached for clinician. PT-BR: Capacidade do slice por médico atingida. */
+	@ExceptionHandler(TagAssignmentSliceFullException.class)
+	public ResponseEntity<ApiErrorResponse> tagAssignmentSliceFull(
+			TagAssignmentSliceFullException ex,
 			HttpServletRequest request) {
 		return respond(
 				request,
 				HttpStatus.BAD_REQUEST,
-				ApiProblemCode.TAG_ASSIGNMENT_DOCTOR_REQUIRED,
-				msg("error.user.tagAssignment.doctorRequired"),
+				ApiProblemCode.TAG_ASSIGNMENT_SLICE_FULL,
+				msg(
+						"error.user.tagAssignment.sliceFull",
+						ex.assignedByDoctorId().toString(),
+						ex.patientId().toString()),
 				null);
 	}
 
@@ -157,19 +177,6 @@ public class ApiExceptionHandler {
 				HttpStatus.FORBIDDEN,
 				ApiProblemCode.ASSIGNING_ACTOR_NOT_DOCTOR,
 				msg("error.user.tagAssignment.actorNotDoctor", ex.actorCode()),
-				null);
-	}
-
-	/** EN: Tags allowed only on patient accounts. PT-BR: Etiquetas só em contas paciente. */
-	@ExceptionHandler(TagAssignmentPatientOnlyException.class)
-	public ResponseEntity<ApiErrorResponse> tagAssignmentPatientOnly(
-			TagAssignmentPatientOnlyException ex,
-			HttpServletRequest request) {
-		return respond(
-				request,
-				HttpStatus.BAD_REQUEST,
-				ApiProblemCode.TAG_ASSIGNMENT_PATIENT_ONLY,
-				msg("error.user.tagAssignment.patientOnly", ex.targetCode()),
 				null);
 	}
 

@@ -498,12 +498,12 @@ CREATE TABLE user_tag_assignments (
 
 Regras de negócio na API (resumo):
 
-* **Limite por pedido:** até **cinco** identificadores de tag **distintos** em `tagIds` por `PUT` quando se substitui a fatia de um médico (`assignedByDoctorId`).
-* **Substituição por fatia:** o pedido substitui apenas as linhas desse paciente com `assigned_by_user_id` igual ao médico indicado; atribuições de outros médicos mantêm-se.
-* **União visível (deduplicada):** o conjunto apresentado ao paciente é o conjunto **único** de `tag_id` sobre todas as linhas; vários médicos podem contribuir com a mesma tag de catálogo, mas o cliente vê essa etiqueta **uma vez**.
-* **Mesma tag, vários médicos:** permitido — persistem-se linhas separadas; remover a fatia de um médico **não** remove a tag para o paciente se outro médico a mantiver na sua fatia.
-* **`assignedByDoctorId` nulo:** permitido apenas como **no-op** quando `tagIds` coincide exatamente com a união já persistida; caso contrário → `TAG_ASSIGNMENT_DOCTOR_REQUIRED`.
-* **Alvo médico:** contas com `is_doctor = true` no utilizador alvo **não** recebem tags de catálogo por este fluxo (`TAG_ASSIGNMENT_PATIENT_ONLY`).
+* **API REST (MindSignal):** `PUT /api/v1/users/{id}` actualiza apenas **perfil** (`UserWriteRequest` — code, flag médico, dados demográficos). Ligações paciente–tag de catálogo: `POST /api/v1/users/{patientId}/tag-assignments` (corpo `assignedByDoctorId`, `tagId`) para **adicionar** uma etiqueta ao slice daquele médico; `DELETE /api/v1/users/{patientId}/tag-assignments/{tagId}?assignedByDoctorId=` para **remover** uma atribuição concreta.
+* **Limite por médico e paciente:** no máximo **cinco** `tag_id` **distintos** por médico sobre o mesmo paciente; tentativa extra → `TAG_ASSIGNMENT_SLICE_FULL` (400).
+* **União visível (deduplicada):** leituras do utilizador (`UserResponse.tags`) são a união única por `tag_id`; várias linhas sob médicos diferentes com a mesma tag mostram uma entrada.
+* **Mesma tag, vários médicos:** linhas independentes (`patient_id`, `tag_id`, `assigned_by_user_id`); remover a de um médico não remove para o paciente se outro mantiver a sua linha.
+* **Papel médico apenas no atribuídor:** `assignedByDoctorId` deve ser utilizador com `is_doctor = true`; o **destino** da atribuição é qualquer utilizador (paciente por omissão; contas médicas continuam também a ser pacientes e podem receber tags de catálogo).
+* **Remover atribuição inexistente:** `PATIENT_TAG_ASSIGNMENT_NOT_FOUND` (404).
 
 ---
 
@@ -780,124 +780,70 @@ Usuário seleciona uma tag no app
 
 ## Objetivo
 
-Permitir que **cada** médico configure **a sua fatia** de tags de catálogo para um paciente, com limite **por pedido** e **substituição apenas dessa fatia**, mantendo a **união** de tags visíveis ao paciente.
+Permitir que **cada** médico **adicione ou remova** individualmente etiquetas do catálogo na fatia daquele paciente (até **cinco tags distintas** por médico por paciente), mantendo para o paciente a **união deduplicada** de todas as fatias.
 
 ---
 
-## Trigger
+## Trigger — adicionar
 
-Médico grava as tags do paciente (ex.: `PUT /api/v1/users/{patientId}` com `UserWriteRequest` contendo `tagIds` e, quando aplicável, `assignedByDoctorId`).
+`POST /api/v1/users/{patientId}/tag-assignments` com corpo `{ "assignedByDoctorId": "…", "tagId": "…" }`
+
+---
+
+## Trigger — remover
+
+`DELETE /api/v1/users/{patientId}/tag-assignments/{tagId}?assignedByDoctorId=…`
 
 ---
 
 ## Preconditions
 
-* Relacionamento ativo (conforme política de produto)
-* Tags existem no catálogo global (`tags`)
-* Utilizador alvo **não** é cenário válido para atribuição de tags de catálogo quando tratado como conta médica no alvo (`is_doctor = true`) — ver erro de negócio correspondente
-* Para alterar o conjunto efetivo (não apenas repetir a união já persistida): corpo deve identificar explicitamente o médico cuja fatia está a ser substituída (`assignedByDoctorId`)
+* Relacionamento ativo (conforme política de produto, quando aplicável)
+* Etiquetas existentes no catálogo global (`tags`) em cada adição
+* Qualquer conta utilizadora pode ser destino das tags de catálogo (inclusive com `is_doctor = true`, pois primeiro é paciente)
+* `assignedByDoctorId` referencia utilizador persistente com `is_doctor = true` (quem **não** é médico não pode figurar aqui → `ASSIGNING_ACTOR_NOT_DOCTOR`)
 
 ---
 
-## Input
+## Main Path — adicionar
 
-* `patient_id` (path)
-* `tagIds`: lista com **no máximo cinco** identificadores de tag **distintos** por pedido
-* `assignedByDoctorId`: UUID do médico responsável pela fatia (obrigatório sempre que o pedido não seja o no-op da união global descrito abaixo)
-
----
-
-## Main Path
-
-1. Receber pedido; validar existência das tags em `tags` e tamanho da lista (≤ 5 distintos)
-2. Se `assignedByDoctorId` estiver ausente: comparar o conjunto em `tagIds` com a **união** de todas as `tag_id` já presentes em `user_tag_assignments` para o paciente; se forem iguais → **no-op**; senão → rejeitar (`TAG_ASSIGNMENT_DOCTOR_REQUIRED`)
-3. Com `assignedByDoctorId` válido e ator com capacidade médica:
-   * Remover de `user_tag_assignments` todas as linhas desse `patient_id` com `assigned_by_user_id` igual ao médico indicado
-   * Inserir linhas `(patient_id, tag_id, assigned_by_user_id, assigned_at)` para cada id em `tagIds` (o mesmo `tag_id` pode coexistir noutra linha com **outro** `assigned_by_user_id`)
-4. Responder com o perfil do utilizador refletindo a **união deduplicada** de `tag_id` sobre todas as linhas
+1. Validar paciente (`patient_id` no path); validar médico (`assignedByDoctorId`) e médico efectivo (`isDoctor`)
+2. Resolver `tagId` contra `tags`
+3. Se já existir linha `(patient_id, tag_id, assigned_by_user_id)` igual → **no-op**, resposta 200 com `UserResponse`
+4. Se o médico já tiver **cinco** tags distintas para o paciente e for uma **nova** tag → recusar `TAG_ASSIGNMENT_SLICE_FULL` (400)
+5. Inserir `(patient_id, tag_id, assigned_by_user_id, assigned_at)`
 
 ---
 
-## Alternate Paths
+## Main Path — remover
 
-### A1 — `tagIds` vazio com `assignedByDoctorId` definido
-
-* Remove **toda** a fatia desse médico para o paciente; outras fatias mantêm-se
-
----
-
-### A2 — Idempotência na mesma fatia
-
-* Reenviar o mesmo conjunto (até cinco tags) para o mesmo `assignedByDoctorId` → estado final equivalente
+1. Carregar paciente por `patient_id`
+2. Apagar apenas a linha com (`patient_id`, `tag_id`, `assigned_by_user_id`); se não existir → 404 `PATIENT_TAG_ASSIGNMENT_NOT_FOUND`
+3. Responder com perfil atual do paciente (união deduplicada das tags restantes)
 
 ---
 
-### A3 — Duplicados no payload
+## Error Paths (resumo)
 
-* Tratar como um único conjunto de ids distintos antes de aplicar o limite de cinco
-
----
-
-## Error Paths
-
-### E1 — Tag inexistente ou referência inválida
-
-* Rejeitar (ex.: `TAG_REFERENCES_INVALID`, 400)
-
----
-
-### E2 — Mais de cinco tags distintas no pedido
-
-* Rejeitar validação (bean validation / `INVALID_ARGUMENT`)
-
----
-
-### E3 — Atribuição indevida a conta médica como alvo
-
-* `TAG_ASSIGNMENT_PATIENT_ONLY`
-
----
-
-### E4 — Médico atribuídor inválido ou não encontrado
-
-* `ASSIGNING_ACTOR_NOT_DOCTOR` / `ASSIGNING_DOCTOR_NOT_FOUND`
-
----
-
-### E5 — Falha DB
-
-* Retry (3x)
-* Se falhar:
-
-  * rollback
-  * log ERROR
+* `TAG_REFERENCES_INVALID`, `TAG_ASSIGNMENT_SLICE_FULL`, `ASSIGNING_ACTOR_NOT_DOCTOR`, `ASSIGNING_DOCTOR_NOT_FOUND`, `USER_NOT_FOUND` no utilizador-alvo, `PATIENT_TAG_ASSIGNMENT_NOT_FOUND` ao remover vínculos inexistentes
 
 ---
 
 ## System Failure Decisions
 
-* Fail-closed
-* Operação transacional na fatia
-* Rollback completo em erro
-
----
-
-## Output
-
-* Fatia do médico atualizada; paciente vê a **união** de todas as fatias
+* Fail-closed; operações pequenas e transacionais
 
 ---
 
 ## Data Changes
 
-* `DELETE` + `INSERT` em `user_tag_assignments` **restritos** ao par (`patient_id`, `assigned_by_user_id` = médico da fatia)
+* `INSERT` / `DELETE` linha singular em `user_tag_assignments` por pedido bem sucedido
 
 ---
 
 ## Postconditions
 
-* Cada combinação (paciente, tag, médico atribuídor) no máximo **uma** linha (`UNIQUE (patient_id, tag_id, assigned_by_user_id)`)
-* Tags utilizáveis pelo paciente em registo de eventos = existe **pelo menos** uma linha em `user_tag_assignments` com esse `tag_id` para o paciente
+* Como em §7.4 (único `(patient_id, tag_id, assigned_by_user_id)` por linha; união de tags ao ler o paciente).
 
 ---
 

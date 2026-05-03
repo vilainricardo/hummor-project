@@ -24,14 +24,14 @@ public enum ApiProblemCode {
 	VALIDATION_FAILED,
 	/** EN: Illegal argument or bad input. PT-BR: Argumento inválido ou entrada incorreta. */
 	INVALID_ARGUMENT,
-	/** EN: Patient tag mutation without assigning doctor identity. PT-BR: Mudança de tags sem identificar o médico atribuídor. */
-	TAG_ASSIGNMENT_DOCTOR_REQUIRED,
 	/** EN: Assigning-doctor UUID not persisted. PT-BR: UUID do médico atribuídor inexistente. */
 	ASSIGNING_DOCTOR_NOT_FOUND,
 	/** EN: Assigned-by user exists but lacks doctor role. PT-BR: Utente existe mas não tem perfil médico. */
 	ASSIGNING_ACTOR_NOT_DOCTOR,
-	/** EN: Patient-only tag links; target account is clinician. PT-BR: Etiquetas só para paciente; conta alvo é clínico. */
-	TAG_ASSIGNMENT_PATIENT_ONLY,
+	/** EN: Patient tag assignment row missing for this clinician. PT-BR: Atribuição de etiqueta inexistente para este médico. */
+	PATIENT_TAG_ASSIGNMENT_NOT_FOUND,
+	/** EN: Maximum distinct clinician catalogue tags reached for this patient. PT-BR: Máximo de etiquetas por médico neste paciente atingido. */
+	TAG_ASSIGNMENT_SLICE_FULL,
 	/** EN: Unhandled server failure. PT-BR: Falha interna não tratada. */
 	INTERNAL_ERROR
 }

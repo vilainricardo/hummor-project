@@ -6,10 +6,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * <p><b>EN:</b> Create-only payload — new accounts start with no catalogue tag links; associations are set via
- * {@link UserWriteRequest} on update.</p>
- * <p><b>PT-BR:</b> Payload só de criação — novas contas sem tags ligadas; associações via {@link UserWriteRequest}
- * na actualização.</p>
+ * <p><b>EN:</b> Create-only payload — new accounts start with no catalogue tag links; associations use POST/DELETE
+ * {@literal /api/v1/users/{id}/tag-assignments}.</p>
+ * <p><b>PT-BR:</b> Payload só de criação — novas contas sem tags; associações via POST/DELETE em
+ * {@literal /api/v1/users/{id}/tag-assignments}.</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
 public record UserCreateRequest(

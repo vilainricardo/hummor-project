@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +24,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
@@ -45,14 +45,18 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
-	/** POST: {@link UserCreateRequest} — sem {@code tagIds} (sempre criado sem etiquetas). */
+	/** POST: {@link UserCreateRequest} — sem tags (criado sem etiquetas). */
 	private static UserCreateRequest userCreatePayload(String code, boolean doctor) {
 		return new UserCreateRequest(code, doctor, 30, "x", null, null, null, null);
 	}
 
-	/** PUT: {@link UserWriteRequest} com {@code tagIds} e opcionalmente {@code assignedByDoctorId}. */
-	private static UserWriteRequest userUpdatePayload(String code, List<UUID> tagIds, boolean doctor, UUID assignedByDoctorId) {
-		return new UserWriteRequest(code, doctor, 30, "x", null, null, null, null, assignedByDoctorId, tagIds);
+	/** PUT: {@link UserWriteRequest} apenas perfil. */
+	private static UserWriteRequest userUpdatePayload(String code, boolean doctor) {
+		return new UserWriteRequest(code, doctor, 30, "x", null, null, null, null);
+	}
+
+	private String tagAssignJson(UUID assignedByDoctorId, UUID tagId) throws Exception {
+		return objectMapper.writeValueAsString(new UserCatalogueTagAssignRequest(assignedByDoctorId, tagId));
 	}
 
 	private UserResponse readUserResponse(MockHttpServletResponse response) throws Exception {
@@ -107,44 +111,11 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@Test
 	@DisplayName("GET /api/v1/users/{id} and GET /api/v1/users/by-code/{code}")
 	void getById_andByCode_roundTrip() throws Exception {
-		/*
-		 * --- Guia rápido (primeira vez em testes neste projeto) ---
-		 *
-		 * 1) O que é isto? Um "teste automatizado": código que executa a aplicação (ou parte dela) e
-		 *    VERIFICA se o resultado foi o esperado. Se algo falhar, o build (mvn test) fica vermelho.
-		 *
-		 * 2) @Test (JUnit 5): marca este método como cenário de teste. Cada @Test corre isolado.
-		 *
-		 * 3) "Integração" aqui: não testamos só uma função matemática isolada — levantamos o Spring
-		 *    quase completo (serviços, controladores, BD em memória H2). Imitamos pedidos HTTP como
-		 *    se fosse Postman, mas dentro do Java, via MockMvc (cliente de teste oficial do Spring).
-		 *
-		 * 4) MockMvc: permite fazer get("/caminho"), post("/caminho"), etc., e depois afirmar coisas
-		 *    como "o status HTTP tem de ser 200" ou "no JSON, o campo code tem de ser X". Essas
-		 *    afirmações são os .andExpect(...).
-		 *
-		 * 5) @Transactional nesta hierarquia de classes: no fim do método de teste as alterações à BD
-		 *    são desfeitas (rollback), para o próximo teste começar "limpo" sem interferência.
-		 *
-		 * 6) O que este método prova especificamente: depois de CRIAR um utilizador por POST,
-		 *    podemos ACHÁ-LO pelo id (UUID) e também pelo código público "round-trip" — as duas leituras
-		 *    têm de funcionar sobre o mesmo registo criado (ida e volta / "round trip").
-		 */
-
 		userRepository.deleteAll();
 
-		/*
-		 * userCreatePayload(...) usa {@link UserCreateRequest} (sem tagIds). objectMapper serializa para JSON.
-		 * code="round-trip", doctor=true, idade fixa 30, profession fixa "x".
-		 */
 		UserCreateRequest roundTripSent = userCreatePayload("round-trip", true);
 		String payload = objectMapper.writeValueAsString(roundTripSent);
 
-		/*
-		 * json(...) (método da classe pai) acrescenta: Content-Type application/json + corpo UTF-8 +
-		 * cabeçalho Accept pedindo JSON de volta — para o servidor tratar como API JSON.
-		 * post("/api/v1/users") → corresponde ao @PostMapping do UserController.
-		 */
 		MvcResult created = mockMvc.perform(json(post("/api/v1/users"), payload))
 				.andExpect(status().isCreated())
 				.andExpect(header().exists("Location"))
@@ -152,30 +123,13 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		assertUserPostBodyMatches(roundTripSent, created);
 
 		String location = created.getResponse().getHeader("Location");
-
-		/*
-		 * HTTP 201 Created = "criei recurso novo". Convém também um cabeçalho Location com a URL onde
-		 * esse recurso passa a viver — aqui esperamos algo que termina com /users/<uuid-do-servidor>.
-		 * Extrair o UUID do fim dessa URL para usarmos no GET seguinte (simula um cliente real que só
-		 * tinha guardado Location após o create).
-		 */
 		String rawId = location.substring(location.lastIndexOf('/') + 1);
 		UUID id = UUID.fromString(rawId);
 
-		/*
-		 * jsonPath("$", ...) navega pelo JSON como se fosse "raiz $.campo".
-		 * $.id = campo "id" no topo da resposta. .value(...) compara ao UUID em string porque JSON
-		 * representa assim. status().isOk() = HTTP 200.
-		 */
 		mockMvc.perform(get("/api/v1/users/{id}", id).accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(id.toString()));
 
-		/*
-		 * Segunda forma de ler o mesmo utilizador: só com o código público "round-trip" na URL.
-		 * Também esperamos HTTP 200 e que o campo "code" no JSON coincida — confirma o endpoint
-		 * GET /api/v1/users/by-code/{code}.
-		 */
 		mockMvc.perform(get("/api/v1/users/by-code/{code}", "round-trip").accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value("round-trip"));
@@ -198,8 +152,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT /api/v1/users/{id} — update including tagIds")
-	void update_existing_withTags_sortsAlphabetically() throws Exception {
+	@DisplayName("POST /api/v1/users/{id}/tag-assignments — duas tags; lista ordenada alfabeticamente no GET")
+	void assignTags_sortsAlphabeticallyOnRead() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var zebra = tagRepository.save(new com.rb.multi.agent.entity.Tag("zzz-zebra", null, TagCategory.OTHER));
@@ -217,11 +171,16 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		String location = createdUser.getResponse().getHeader("Location");
 		UUID userId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
-		List<UUID> orderZebraFirstAlphaSecond = List.of(zebra.getId(), alpha.getId());
-		// Paciente apenas: tags só com isDoctor=false; promover para médico exigiria já ter etiquetas válidas antes.
-		String updateJson =
-				objectMapper.writeValueAsString(userUpdatePayload("up-tags", orderZebraFirstAlphaSecond, false, doctor.getId()));
-		mockMvc.perform(json(put("/api/v1/users/{id}", userId), updateJson))
+		mockMvc.perform(
+						json(
+								post("/api/v1/users/{uid}/tag-assignments", userId),
+								tagAssignJson(doctor.getId(), zebra.getId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.tags", hasSize(1)));
+		mockMvc.perform(
+						json(
+								post("/api/v1/users/{uid}/tag-assignments", userId),
+								tagAssignJson(doctor.getId(), alpha.getId())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.doctor").value(false))
 				.andExpect(jsonPath("$.tags", hasSize(2)))
@@ -234,8 +193,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT /api/v1/users/{id} — unknown tag id")
-	void update_unknownTag_returns400() throws Exception {
+	@DisplayName("POST …/tag-assignments — unknown tag id")
+	void assign_unknownTag_returns400() throws Exception {
 		userRepository.deleteAll();
 		User doctor = userRepository.save(new User("doc-bad-tags", true));
 		UserCreateRequest badTagsCreate = userCreatePayload("bad-tags", false);
@@ -249,44 +208,20 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		String location = badCreated.getResponse().getHeader("Location");
 		UUID userId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
-		List<UUID> missing = List.of(UUID.randomUUID());
-		String bad = objectMapper.writeValueAsString(userUpdatePayload("bad-tags", missing, false, doctor.getId()));
-		mockMvc.perform(json(put("/api/v1/users/{id}", userId), bad))
+		UUID phantom = UUID.randomUUID();
+		mockMvc.perform(json(post("/api/v1/users/{uid}/tag-assignments", userId), tagAssignJson(doctor.getId(), phantom)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("TAG_REFERENCES_INVALID"));
 	}
 
 	@Test
-	@DisplayName("PUT /api/v1/users/{id} — alteração de tagIds sem assignedByDoctorId → 400")
-	void update_tagsChangeWithoutDoctor_returns400() throws Exception {
-		userRepository.deleteAll();
-		tagRepository.deleteAll();
-		var catalogueTag = tagRepository.save(new com.rb.multi.agent.entity.Tag("only-with-doc", null, TagCategory.OTHER));
-		UserCreateRequest patient = userCreatePayload("needs-med", false);
-		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
-						.andExpect(status().isCreated())
-						.andExpect(header().exists("Location"))
-						.andReturn();
-		String location = created.getResponse().getHeader("Location");
-		UUID uid = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", uid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("needs-med", List.of(catalogueTag.getId()), false, null))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_DOCTOR_REQUIRED"));
-	}
-
-	@Test
-	@DisplayName("PUT … — médico atribuí primeiro; utente paciente não-médico tenta criar sua fatia não vazia → 403")
-	void update_actorNotDoctor_returns403() throws Exception {
+	@DisplayName("POST … — utente paciente não-médico tenta figurar como assignedByDoctorId → 403")
+	void assign_actorNotDoctor_returns403() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var catalogueTag =
 				tagRepository.save(new com.rb.multi.agent.entity.Tag("actor-test", null, TagCategory.SLEEP));
-		var fakerOnlyCatalogueTag =
+		var fakerExtra =
 				tagRepository.save(new com.rb.multi.agent.entity.Tag("faker-only-extra", null, TagCategory.SLEEP));
 		User realDoctor = userRepository.save(new User("doctor-actor-it", true));
 		User faker = userRepository.save(new User("not-doc-assign-it", false));
@@ -298,33 +233,20 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		UUID pid = UUID.fromString(
 				created.getResponse().getHeader("Location").substring(
 						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"patient-actor-it", List.of(catalogueTag.getId()), false, realDoctor.getId()))))
+		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(realDoctor.getId(), catalogueTag.getId())))
 				.andExpect(status().isOk());
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"patient-actor-it",
-												List.of(fakerOnlyCatalogueTag.getId()),
-												false,
-												faker.getId()))))
+		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(faker.getId(), fakerExtra.getId())))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.code").value("ASSIGNING_ACTOR_NOT_DOCTOR"));
 	}
 
 	@Test
-	@DisplayName("PUT … — conta com isDoctor não recebe tagIds de paciente → 400")
-	void update_doctorAccountTags_returns400() throws Exception {
+	@DisplayName("POST … — alvo com isDoctor=true: é paciente+e médico e recebe etiqueta de catálogo")
+	void assign_targetWithDoctorFlagStillReceivesCatalogueTag_returns200() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var catalogueTag =
-				tagRepository.save(new com.rb.multi.agent.entity.Tag("no-clinician-tags-it", null, TagCategory.SLEEP));
+				tagRepository.save(new com.rb.multi.agent.entity.Tag("clin-can-be-patient", null, TagCategory.SLEEP));
 		User clinicianAssigner = userRepository.save(new User("assigner-cli-it", true));
 		UserCreateRequest clinicianPatient = userCreatePayload("clin-account-it", true);
 		MvcResult created =
@@ -336,41 +258,46 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", cid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"clin-account-it", List.of(catalogueTag.getId()), true, clinicianAssigner.getId()))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_PATIENT_ONLY"));
+								post("/api/v1/users/{cid}/tag-assignments", cid),
+								tagAssignJson(clinicianAssigner.getId(), catalogueTag.getId())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.doctor").value(true))
+				.andExpect(jsonPath("$.tags", hasSize(1)));
 	}
 
 	@Test
-	@DisplayName("PUT … — lista tagIds com 6 elementos (limite Bean Validation = 5) → VALIDATION_FAILED")
-	void update_edge_sixSlotsInPayload_returns400Validation() throws Exception {
+	@DisplayName("POST … — sexta etiqueta distinta pelo mesmo médico → TAG_ASSIGNMENT_SLICE_FULL")
+	void assign_sixthDistinctTag_returns400() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-bv-six", true));
-		UserCreateRequest patient = userCreatePayload("bd-six-slot", false);
+		User doctor = userRepository.save(new User("doc-slice-cap", true));
+		List<UUID> fiveIds =
+				IntStream.range(0, 5)
+						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("cap-" + i, null, TagCategory.SLEEP)))
+						.map(com.rb.multi.agent.entity.Tag::getId)
+						.toList();
+		UUID sixth = tagRepository.save(new com.rb.multi.agent.entity.Tag("cap-six", null, TagCategory.OTHER)).getId();
 		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+				mockMvc.perform(
+								json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-sixth", false))))
 						.andExpect(status().isCreated())
 						.andReturn();
-		String location = created.getResponse().getHeader("Location");
-		UUID uid = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
-		List<UUID> sixSlots = Stream.generate(UUID::randomUUID).limit(6).toList();
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", uid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("bd-six-slot", sixSlots, false, doctor.getId()))))
+		UUID pid =
+				UUID.fromString(
+						created.getResponse().getHeader("Location").substring(
+								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+		for (UUID tid : fiveIds) {
+			mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), tid)))
+					.andExpect(status().isOk());
+		}
+		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), sixth)))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-				.andExpect(jsonPath("$.fieldErrors.tagIds").exists());
+				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_SLICE_FULL"));
 	}
 
 	@Test
-	@DisplayName("PUT … — cinco etiquetas válidas pelo mesmo médico (slice máx.) → 200 e corpo tags com tam. 5")
-	void update_edge_fiveDistinctTags_returns200AndFiveTagsInBody() throws Exception {
+	@DisplayName("POST … — cinco etiquetas válidas pelo mesmo médico → GET com tam. 5")
+	void assign_edge_fiveDistinctTags_returns200AndFiveTagsInBody() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		User doctor = userRepository.save(new User("doc-bv-five", true));
@@ -379,27 +306,26 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("five-" + i, null, TagCategory.OTHER)))
 						.map(com.rb.multi.agent.entity.Tag::getId)
 						.toList();
-		UserCreateRequest patient = userCreatePayload("bd-five-tags", false);
 		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-five-tags", false))))
 						.andExpect(status().isCreated())
 						.andReturn();
 		UUID pid =
 				UUID.fromString(
 						created.getResponse().getHeader("Location").substring(
 								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("bd-five-tags", fiveIds, false, doctor.getId()))))
+		for (UUID tid : fiveIds) {
+			mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), tid)))
+					.andExpect(status().isOk());
+		}
+		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.tags", hasSize(5)));
 	}
 
 	@Test
-	@DisplayName("PUT … — dois médicos com 5 id distintos cada ⇒ GET acumula 10 etiquetas únicas")
-	void update_agg_twoCliniciansEachFiveDistinct_tagsLengthTenOnGet() throws Exception {
+	@DisplayName("POST … — dois médicos com 5 ids distintos cada ⇒ GET acumula 10 etiquetas únicas")
+	void assign_agg_twoCliniciansEachFiveDistinct_tagsLengthTenOnGet() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		User doctorA = userRepository.save(new User("doc-acc-a", true));
@@ -424,16 +350,14 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 						created.getResponse().getHeader("Location").substring(
 								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
 
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(userUpdatePayload("bd-acc-u", idsA, false, doctorA.getId()))))
-				.andExpect(status().isOk());
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(userUpdatePayload("bd-acc-u", idsB, false, doctorB.getId()))))
-				.andExpect(status().isOk());
+		for (UUID tid : idsA) {
+			mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctorA.getId(), tid)))
+					.andExpect(status().isOk());
+		}
+		for (UUID tid : idsB) {
+			mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctorB.getId(), tid)))
+					.andExpect(status().isOk());
+		}
 
 		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
@@ -441,8 +365,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT … — dois médicos atribuem a mesma tag; GET deduplica para uma entrada visível")
-	void update_twoCliniciansSameCatalogueTag_patientSeesOneDistinctTag() throws Exception {
+	@DisplayName("POST … — dois médicos atribuem a mesma tag; GET deduplica para uma entrada visível")
+	void assign_twoCliniciansSameCatalogueTag_patientSeesOneDistinctTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("shared-by-two", null, TagCategory.SLEEP));
@@ -459,17 +383,13 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-share-u", List.of(shared.getId()), false, doctorA.getId()))))
+								post("/api/v1/users/{pid}/tag-assignments", pid),
+								tagAssignJson(doctorA.getId(), shared.getId())))
 				.andExpect(status().isOk());
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-share-u", List.of(shared.getId()), false, doctorB.getId()))))
+								post("/api/v1/users/{pid}/tag-assignments", pid),
+								tagAssignJson(doctorB.getId(), shared.getId())))
 				.andExpect(status().isOk());
 
 		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
@@ -479,8 +399,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT … — médico A remove fatia mas B mantém a mesma tag; paciente continua a ver a tag")
-	void update_firstClearsSlice_secondKeepsSharedTag_patientStillSeesTag() throws Exception {
+	@DisplayName("DELETE … — médico A remove só a sua atrib.; B mantém a mesma tag")
+	void delete_oneClinicianAssignment_secondKeepsSharedTag_patientStillSeesTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("slice-shared", null, TagCategory.SLEEP));
@@ -497,21 +417,19 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("bd-slc-u", List.of(shared.getId()), false, doctorA.getId()))))
+								post("/api/v1/users/{pid}/tag-assignments", pid),
+								tagAssignJson(doctorA.getId(), shared.getId())))
 				.andExpect(status().isOk());
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("bd-slc-u", List.of(shared.getId()), false, doctorB.getId()))))
+								post("/api/v1/users/{pid}/tag-assignments", pid),
+								tagAssignJson(doctorB.getId(), shared.getId())))
 				.andExpect(status().isOk());
 
 		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(userUpdatePayload("bd-slc-u", List.of(), false, doctorA.getId()))))
+						delete("/api/v1/users/{pid}/tag-assignments/{tid}", pid, shared.getId())
+								.param("assignedByDoctorId", doctorA.getId().toString())
+								.accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk());
 
 		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON))
@@ -521,14 +439,13 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	@Test
-	@DisplayName("PUT … — assignedByDoctorId UUID aleatório inexistente → 404 ASSIGNING_DOCTOR_NOT_FOUND")
-	void update_edge_unknownAssigningDoctor_returns404() throws Exception {
+	@DisplayName("POST … — assignedByDoctorId inexistente → 404 ASSIGNING_DOCTOR_NOT_FOUND")
+	void assign_edge_unknownAssigningDoctor_returns404() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var tag = tagRepository.save(new com.rb.multi.agent.entity.Tag("needs-valid-doc-h", null, TagCategory.SLEEP));
-		UserCreateRequest patient = userCreatePayload("bd-unk-doctor", false);
 		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-unk-doctor", false))))
 						.andExpect(status().isCreated())
 						.andReturn();
 		UUID pid =
@@ -537,47 +454,38 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
 		mockMvc.perform(
 						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-unk-doctor", List.of(tag.getId()), false, UUID.randomUUID()))))
+								post("/api/v1/users/{pid}/tag-assignments", pid),
+								tagAssignJson(UUID.randomUUID(), tag.getId())))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("ASSIGNING_DOCTOR_NOT_FOUND"));
 	}
 
 	@Test
-	@DisplayName("PUT … — dois ids de tag inexistentes + um válido → TAG_REFERENCES_INVALID")
-	void update_edge_partiallyUnknownTags_returns400() throws Exception {
+	@DisplayName("DELETE … — atribuição inexistente → PATIENT_TAG_ASSIGNMENT_NOT_FOUND")
+	void delete_unknownAssignment_returns404() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-mixed-h", true));
-		var ok = tagRepository.save(new com.rb.multi.agent.entity.Tag("mixed-ok-t", null, TagCategory.SLEEP));
-		UserCreateRequest patient = userCreatePayload("bd-mix-unknown", false);
+		User doctor = userRepository.save(new User("doc-del-miss", true));
+		var tag = tagRepository.save(new com.rb.multi.agent.entity.Tag("miss-del", null, TagCategory.SLEEP));
 		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("del-miss-u", false))))
 						.andExpect(status().isCreated())
 						.andReturn();
 		UUID pid =
 				UUID.fromString(
 						created.getResponse().getHeader("Location").substring(
 								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
-		UUID phantom = UUID.randomUUID();
 		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-mix-unknown",
-												List.of(ok.getId(), phantom),
-												false,
-												doctor.getId()))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("TAG_REFERENCES_INVALID"));
+						delete("/api/v1/users/{pid}/tag-assignments/{tid}", pid, tag.getId())
+								.param("assignedByDoctorId", doctor.getId().toString())
+								.accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("PATIENT_TAG_ASSIGNMENT_NOT_FOUND"));
 	}
 
 	@Test
-	@DisplayName("PUT … — segunda escrita apenas reordena os mesmos tagIds→ HTTP 200 sem assignedByDoctorId")
-	void update_edge_reorderPayloadSameMembershipSecondPutWithoutDoctor_returns200() throws Exception {
+	@DisplayName("PUT /api/v1/users/{id} — perfil sem tocar nas tags já atribuídas")
+	void update_profileLeavesTagsUntouched() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var tagB = tagRepository.save(new com.rb.multi.agent.entity.Tag("reorder-beta-h", null, TagCategory.OTHER));
@@ -591,55 +499,18 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		String location = created.getResponse().getHeader("Location");
 		UUID pid = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-reorder-ts", List.of(tagB.getId(), tagA.getId()), false, doctor.getId()))))
+		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), tagB.getId())))
+				.andExpect(status().isOk());
+		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), tagA.getId())))
 				.andExpect(status().isOk());
 
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-reorder-ts", List.of(tagA.getId(), tagB.getId()), false, null))))
+		mockMvc.perform(json(put("/api/v1/users/{id}", pid), objectMapper.writeValueAsString(userUpdatePayload("bd-rt-ren", false))))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.tags", hasSize(2)));
-	}
+				.andExpect(jsonPath("$.tags", hasSize(2)))
+				.andExpect(jsonPath("$.code").value("bd-rt-ren"));
 
-	@Test
-	@DisplayName("PUT … — limpar todas as tags sem médico após já ter etiquetas → TAG_ASSIGNMENT_DOCTOR_REQUIRED")
-	void update_edge_clearTagsWithoutDoctorAfterHavingTags_returns400() throws Exception {
-		userRepository.deleteAll();
-		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-clear-h", true));
-		var lone = tagRepository.save(new com.rb.multi.agent.entity.Tag("clear-requires-doc", null, TagCategory.SLEEP));
-		UserCreateRequest patient = userCreatePayload("bd-clr-rules", false);
-		MvcResult created =
-				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
-						.andExpect(status().isCreated())
-						.andReturn();
-		UUID pid =
-				UUID.fromString(
-						created.getResponse().getHeader("Location").substring(
-								created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload(
-												"bd-clr-rules", List.of(lone.getId()), false, doctor.getId()))))
-				.andExpect(status().isOk());
-
-		mockMvc.perform(
-						json(
-								put("/api/v1/users/{id}", pid),
-								objectMapper.writeValueAsString(
-										userUpdatePayload("bd-clr-rules", List.of(), false, null))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_DOCTOR_REQUIRED"));
+		mockMvc.perform(get("/api/v1/users/{id}", pid).accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk()).andExpect(
+				jsonPath("$.tags", hasSize(2)));
 	}
 
 	@Test
@@ -719,8 +590,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		String loc = createdTwo.getResponse().getHeader("Location");
 		UUID idTwo = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
 
-		String conflict =
-				objectMapper.writeValueAsString(userUpdatePayload("owner-one", List.of(), false, null));
+		String conflict = objectMapper.writeValueAsString(userUpdatePayload("owner-one", false));
 		mockMvc.perform(json(put("/api/v1/users/{id}", idTwo), conflict))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USER_CODE_CONFLICT"));

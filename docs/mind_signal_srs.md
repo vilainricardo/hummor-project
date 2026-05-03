@@ -98,10 +98,10 @@ Dependências: FR-008
 ---
 
 ### FR-008 — Configuração de Tags
-Descrição: Cada médico atualiza até **cinco** tags de catálogo **por pedido** para o paciente alvo (**fatia** desse médico). Vários médicos **podem** incluir a **mesma** tag de catálogo (linhas distintas na persistência); o paciente vê a **união deduplicada** por etiqueta (cada `tag_id` uma vez na UI/leitura). Pedidos ambíguos sem identificação do médico atribuídor são rejeitados exceto **no-op** quando o conjunto repetido coincide com essa união já gravada.
+Descrição: Ligação/desligação utilizador-alvo ↔ tag de catálogo (`POST …/users/{id}/tag-assignments`, `DELETE …/tag-assignments/{tag}?assignedByDoctorId`). O **`assignedByDoctorId`** tem de referir conta **médica** (`is_doctor`); o **alvo** é qualquer utilizador (paciente por omissão; quem também é médico continua paciente para estes vínculos). Um pedido POST liga uma `tagId`; até **cinco** distintas por médico sobre o mesmo alvo; união deduplicada ao ler perfil; PUT só dados de perfil.
 Prioridade: Must
 Validação:
-- Critério: limite por pedido, modelo de união deduplicada e validações de papel/conta-alvo respeitados (ver também testes de integração da API).
+- Critério: capacidade por médico, modelo de união deduplicada e validações de papel/conta-alvo respeitados (ver testes API).
 - Método: teste funcional + testes API
 Dependências: —
 

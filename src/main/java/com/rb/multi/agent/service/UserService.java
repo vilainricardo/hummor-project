@@ -1,19 +1,14 @@
 package com.rb.multi.agent.service;
 
 import java.time.Instant;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import jakarta.persistence.EntityManager;
 
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
@@ -23,8 +18,8 @@ import com.rb.multi.agent.entity.UserTagAssignment;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
-import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
-import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
+import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
+import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -37,14 +32,14 @@ import com.rb.multi.agent.repository.UserRepository;
 @Service
 public class UserService {
 
+	private static final int MAX_DISTINCT_TAGS_PER_CLINICIAN_PER_PATIENT = 5;
+
 	private final UserRepository userRepository;
 	private final TagRepository tagRepository;
-	private final EntityManager entityManager;
 
-	public UserService(UserRepository userRepository, TagRepository tagRepository, EntityManager entityManager) {
+	public UserService(UserRepository userRepository, TagRepository tagRepository) {
 		this.userRepository = userRepository;
 		this.tagRepository = tagRepository;
-		this.entityManager = entityManager;
 	}
 
 	/** EN: Ordered table scan surrogate for admin surfaces. PT-BR: Lista completa adequada para ecrãs administrativos. */
@@ -65,7 +60,7 @@ public class UserService {
 		return userRepository.findWithTagsByCode(code);
 	}
 
-	/** EN: Inserts enforcing normalized unique {@code code}; tag associations start empty until update. PT-BR: Inserção com {@code code} único; tags apenas após actualização. */
+	/** EN: Inserts enforcing normalized unique {@code code}; tag associations start empty until catalogue-tag endpoints. PT-BR: Inserção com {@code code} único; tags apenas via endpoints dedicados. */
 	@Transactional
 	public User create(UserCreateRequest request) {
 		String normalizedCode = normalizeCode(request.code());
@@ -78,7 +73,7 @@ public class UserService {
 		return userRepository.save(entity);
 	}
 
-	/** EN: Applies write-request allowing code swaps when uniqueness holds. PT-BR: Actualiza inclusivé troca de code se unicidade for mantida. */
+	/** EN: Applies write-request allowing code swaps when uniqueness holds; ignores tag links here. PT-BR: Actualização de perfil; tags em endpoints separados. */
 	@Transactional
 	public User update(UUID id, UserWriteRequest request) {
 		User entity = userRepository.findWithTagsById(id).orElseThrow(() -> UserNotFoundException.byId(id));
@@ -94,8 +89,69 @@ public class UserService {
 		entity.setDoctor(request.doctor());
 		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
 				request.addressLine());
-		syncTags(entity, request);
 		return userRepository.save(entity);
+	}
+
+	/**
+	 * <p><b>EN:</b> Adds/reaffirms one catalogue-tag slice row; target user may carry {@code isDoctor=true} (still a patient).
+	 * Only {@code assignedByDoctorId} must resolve to {@code isDoctor=true}.</p>
+	 * <p><b>PT-BR:</b> Acrescenta/reforça uma etiqueta no slice do médico; o utilizador-alvo pode ter {@code isDoctor=true}
+	 * (é paciente com capacidade médica). Só o {@code assignedByDoctorId} tem de ser médico efectivo.</p>
+	 */
+	@Transactional
+	public User assignCatalogueTag(UUID patientId, UUID assignedByDoctorId, UUID tagId) {
+		User patient = userRepository.findWithTagsById(patientId).orElseThrow(() -> UserNotFoundException.byId(patientId));
+		User clinician = resolveAssigningDoctor(assignedByDoctorId);
+
+		boolean alreadyHeld =
+				patient.getTagAssignments().stream().anyMatch(
+						a -> assignedByDoctorId.equals(a.getAssignedBy().getId()) && tagId.equals(a.getTag().getId()));
+		if (alreadyHeld) {
+			return userRepository.save(patient);
+		}
+
+		Tag tag =
+				tagRepository.findById(tagId).orElseThrow(() -> new UnknownTagReferencesException(Set.of(tagId)));
+
+		long distinctHeldByClinician =
+				patient.getTagAssignments().stream()
+						.filter(a -> assignedByDoctorId.equals(a.getAssignedBy().getId()))
+						.map(a -> a.getTag().getId())
+						.distinct()
+						.count();
+		if (distinctHeldByClinician >= MAX_DISTINCT_TAGS_PER_CLINICIAN_PER_PATIENT) {
+			throw new TagAssignmentSliceFullException(patientId, assignedByDoctorId);
+		}
+
+		new UserTagAssignment(patient, tag, clinician, Instant.now());
+		return userRepository.save(patient);
+	}
+
+	/**
+	 * <p><b>EN:</b> Drops one clinician slice assignment for the patient catalogue tag triple.</p>
+	 * <p><b>PT-BR:</b> Remove uma atribuição do slice do médico para essa etiqueta.</p>
+	 */
+	@Transactional
+	public User removeCatalogueTag(UUID patientId, UUID assignedByDoctorId, UUID tagId) {
+		User patient = userRepository.findWithTagsById(patientId).orElseThrow(() -> UserNotFoundException.byId(patientId));
+		boolean removed =
+				patient.getTagAssignments().removeIf(
+						a ->
+								assignedByDoctorId.equals(a.getAssignedBy().getId())
+										&& tagId.equals(a.getTag().getId()));
+		if (!removed) {
+			throw new PatientTagAssignmentNotFoundException(patientId, assignedByDoctorId, tagId);
+		}
+		return userRepository.save(patient);
+	}
+
+	private User resolveAssigningDoctor(UUID assignedByDoctorId) {
+		User assigner =
+				userRepository.findById(assignedByDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assignedByDoctorId));
+		if (!assigner.isDoctor()) {
+			throw new AssigningActorNotDoctorException(assigner.getCode());
+		}
+		return assigner;
 	}
 
 	/** EN: Removes aggregate when present otherwise {@link UserNotFoundException}. PT-BR: Remove agregado; senão lança {@link UserNotFoundException}. */
@@ -122,74 +178,6 @@ public class UserService {
 		entity.setCountry(country);
 		entity.setCity(city);
 		entity.setAddressLine(addressLine);
-	}
-
-	/**
-	 * <p><b>EN:</b> For {@link UserWriteRequest#assignedByDoctorId()} non-null, replaces only that clinician's slice
-	 * (max five distinct tag ids per write). With {@code assignedByDoctorId=null}, no-op iff {@code tagIds} mirrors the
-	 * full merged catalogue tag projection for the patient; otherwise callers must identify which slice to edit.</p>
-	 * <p><b>PT-BR:</b> Com {@link UserWriteRequest#assignedByDoctorId()} definido, substitui só as etiquetas daquele médico
-	 * (até cinco ids distintos por pedido). Com {@code null}, só é noop se {@code tagIds} coincidir com a união já
-	 * persistida para o paciente.</p>
-	 */
-	private void syncTags(User entity, UserWriteRequest request) {
-		List<UUID> incoming = request.tagIds();
-		LinkedHashSet<UUID> uniqueOrdered = incoming.stream().collect(Collectors.toCollection(LinkedHashSet::new));
-		if (uniqueOrdered.size() > 5) {
-			throw new IllegalArgumentException("tagIds allow at most 5 distinct catalogue tag ids per clinician update");
-		}
-
-		Set<UUID> aggregateTagIds =
-				entity.getTagAssignments().stream().map(a -> a.getTag().getId()).collect(Collectors.toSet());
-		UUID assignedByDoctorId = request.assignedByDoctorId();
-
-		if (assignedByDoctorId == null) {
-			if (aggregateTagIds.equals(uniqueOrdered)) {
-				return;
-			}
-			throw new TagAssignmentDoctorRequiredException();
-		}
-
-		LinkedHashSet<UUID> sliceForDoctor =
-				entity.getTagAssignments().stream()
-						.filter(a -> assignedByDoctorId.equals(a.getAssignedBy().getId()))
-						.map(a -> a.getTag().getId())
-						.collect(Collectors.toCollection(LinkedHashSet::new));
-		if (sliceForDoctor.equals(uniqueOrdered)) {
-			return;
-		}
-
-		if (entity.isDoctor() && !incoming.isEmpty()) {
-			throw new TagAssignmentPatientOnlyException(entity.getCode());
-		}
-
-		User assigningDoctor =
-				userRepository.findById(assignedByDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assignedByDoctorId));
-		if (!assigningDoctor.isDoctor()) {
-			throw new AssigningActorNotDoctorException(assigningDoctor.getCode());
-		}
-
-		Map<UUID, Tag> byId;
-		if (uniqueOrdered.isEmpty()) {
-			byId = Map.of();
-		} else {
-			List<Tag> resolved = tagRepository.findAllById(uniqueOrdered);
-			if (resolved.size() != uniqueOrdered.size()) {
-				Set<UUID> foundIds = resolved.stream().map(Tag::getId).collect(Collectors.toSet());
-				Set<UUID> missing =
-						uniqueOrdered.stream().filter(id -> !foundIds.contains(id)).collect(Collectors.toCollection(LinkedHashSet::new));
-				throw new UnknownTagReferencesException(missing);
-			}
-			byId = resolved.stream().collect(Collectors.toMap(Tag::getId, t -> t, (a, b) -> a));
-		}
-
-		entity.getTagAssignments()
-				.removeIf(a -> assignedByDoctorId.equals(a.getAssignedBy().getId()));
-		entityManager.flush();
-		Instant assignedAt = Instant.now();
-		for (UUID id : uniqueOrdered) {
-			new UserTagAssignment(entity, Objects.requireNonNull(byId.get(id)), assigningDoctor, assignedAt);
-		}
 	}
 
 	/** EN: Validates trimmed length-bounded canonical user code text. PT-BR: Valida texto do code utilizador com strip e comprimento máximo. */

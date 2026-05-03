@@ -12,12 +12,15 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
+import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.service.UserService;
 
@@ -70,10 +73,30 @@ public class UserController {
 		return ResponseEntity.created(location).body(UserResponse.from(saved));
 	}
 
-	/** EN: PATCH-style replace constrained by uniqueness rules. PT-BR: Actualização tipo replace respeitando unicidade. */
+	/** EN: Writes profile demographics + public code uniqueness; excludes catalogue-tags (see catalogue-tag mappings). PT-BR: Perfil e unicidade do code; tags em endpoints dedicados. */
 	@PutMapping("/{id}")
 	public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UserWriteRequest request) {
 		var saved = userService.update(id, request);
+		return UserResponse.from(saved);
+	}
+
+	/** EN: Clínico associa ao paciente uma etiqueta existente no catálogo. PT-BR: Médico liga ao paciente uma tag do catálogo. */
+	@PostMapping("/{patientId}/tag-assignments")
+	public UserResponse assignCatalogueTag(
+			@PathVariable UUID patientId,
+			@Valid @RequestBody UserCatalogueTagAssignRequest body) {
+		User saved =
+				userService.assignCatalogueTag(patientId, body.assignedByDoctorId(), body.tagId());
+		return UserResponse.from(saved);
+	}
+
+	/** EN: Remove one catalogue-tag attribution from the clinician slice. PT-BR: Remove uma atribuição de etiqueta do slice do médico. */
+	@DeleteMapping("/{patientId}/tag-assignments/{tagId}")
+	public UserResponse removeCatalogueTag(
+			@PathVariable UUID patientId,
+			@PathVariable UUID tagId,
+			@RequestParam("assignedByDoctorId") UUID assignedByDoctorId) {
+		User saved = userService.removeCatalogueTag(patientId, assignedByDoctorId, tagId);
 		return UserResponse.from(saved);
 	}
 
