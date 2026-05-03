@@ -23,9 +23,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
 
@@ -41,21 +43,22 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
-	/**
-	 * Construtor de corpo HTTP para criar/atualizar utilizadores: fixa perfil arbitrário mas válido
-	 * (idade 30, profession "x", demais opcionais null). Parâmetros do teste: {@code code}, {@code doctor},
-	 * {@code tagIds}.
-	 */
-	private static UserWriteRequest userPayload(String code, List<UUID> tagIds, boolean doctor) {
-		return new UserWriteRequest(code, doctor, 30, "x", null, null, null, null, tagIds);
+	/** POST: {@link UserCreateRequest} — sem {@code tagIds} (sempre criado sem etiquetas). */
+	private static UserCreateRequest userCreatePayload(String code, boolean doctor) {
+		return new UserCreateRequest(code, doctor, 30, "x", null, null, null, null);
+	}
+
+	/** PUT: {@link UserWriteRequest} com {@code tagIds} e opcionalmente {@code assignedByDoctorId}. */
+	private static UserWriteRequest userUpdatePayload(String code, List<UUID> tagIds, boolean doctor, UUID assignedByDoctorId) {
+		return new UserWriteRequest(code, doctor, 30, "x", null, null, null, null, assignedByDoctorId, tagIds);
 	}
 
 	private UserResponse readUserResponse(MockHttpServletResponse response) throws Exception {
 		return objectMapper.readValue(response.getContentAsString(StandardCharsets.UTF_8), UserResponse.class);
 	}
 
-	/** Garante corpo POST 201 alinhado a {@link UserResponse} vs pedido persistido (+ contagem esperada em tags já resolvida pelo serviço). */
-	private void assertUserPostBodyMatches(UserWriteRequest sent, MvcResult result, int expectedTagCount) throws Exception {
+	/** POST 201: {@link UserResponse} alinhado a {@link UserCreateRequest}; criação não devolve tags ligadas. */
+	private void assertUserPostBodyMatches(UserCreateRequest sent, MvcResult result) throws Exception {
 		assertThat(result.getResponse().getStatus()).isEqualTo(201);
 
 		UserResponse body = readUserResponse(result.getResponse());
@@ -73,7 +76,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		assertThat(body.city()).isEqualTo(sent.city());
 		assertThat(body.addressLine()).isEqualTo(sent.addressLine());
 		assertThat(body.createdAt()).isNotNull();
-		assertThat(body.tags()).hasSize(expectedTagCount);
+		assertThat(body.tags()).isEmpty();
 	}
 
 	@Test
@@ -89,14 +92,14 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("POST /api/v1/users — 201 and Location header")
 	void create_returnsCreated() throws Exception {
 		userRepository.deleteAll();
-		UserWriteRequest sent = userPayload("code-a", List.of(), false);
+		UserCreateRequest sent = userCreatePayload("code-a", false);
 		String json = objectMapper.writeValueAsString(sent);
 		MvcResult result =
 				mockMvc.perform(json(post("/api/v1/users"), json))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(sent, result, 0);
+		assertUserPostBodyMatches(sent, result);
 	}
 
 	@Test
@@ -129,11 +132,10 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 
 		/*
-		 * userPayload(...) constrói um objeto Java UserWriteRequest. objectMapper converte esse objeto em
-		 * TEXTO JSON (String) — o mesmo formato que mandarias no Postman no corpo do POST.
-		 * Neste exemplo: code="round-trip", doctor=true, tagIds=[], idade fixa 30, profession fixa "x".
+		 * userCreatePayload(...) usa {@link UserCreateRequest} (sem tagIds). objectMapper serializa para JSON.
+		 * code="round-trip", doctor=true, idade fixa 30, profession fixa "x".
 		 */
-		UserWriteRequest roundTripSent = userPayload("round-trip", List.of(), true);
+		UserCreateRequest roundTripSent = userCreatePayload("round-trip", true);
 		String payload = objectMapper.writeValueAsString(roundTripSent);
 
 		/*
@@ -145,7 +147,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 				.andExpect(status().isCreated())
 				.andExpect(header().exists("Location"))
 				.andReturn();
-		assertUserPostBodyMatches(roundTripSent, created, 0);
+		assertUserPostBodyMatches(roundTripSent, created);
 
 		String location = created.getResponse().getHeader("Location");
 
@@ -200,24 +202,26 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		tagRepository.deleteAll();
 		var zebra = tagRepository.save(new com.rb.multi.agent.entity.Tag("zzz-zebra", null, TagCategory.OTHER));
 		var alpha = tagRepository.save(new com.rb.multi.agent.entity.Tag("aaa-alpha", null, TagCategory.OTHER));
+		User doctor = userRepository.save(new User("doc-up-tags", true));
 
-		UserWriteRequest upTagsCreate = userPayload("up-tags", List.of(), false);
+		UserCreateRequest upTagsCreate = userCreatePayload("up-tags", false);
 		String createdJson = objectMapper.writeValueAsString(upTagsCreate);
 		MvcResult createdUser =
 				mockMvc.perform(json(post("/api/v1/users"), createdJson))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(upTagsCreate, createdUser, 0);
+		assertUserPostBodyMatches(upTagsCreate, createdUser);
 		String location = createdUser.getResponse().getHeader("Location");
 		UUID userId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
 		List<UUID> orderZebraFirstAlphaSecond = List.of(zebra.getId(), alpha.getId());
+		// Paciente apenas: tags só com isDoctor=false; promover para médico exigiria já ter etiquetas válidas antes.
 		String updateJson =
-				objectMapper.writeValueAsString(userPayload("up-tags", orderZebraFirstAlphaSecond, true));
+				objectMapper.writeValueAsString(userUpdatePayload("up-tags", orderZebraFirstAlphaSecond, false, doctor.getId()));
 		mockMvc.perform(json(put("/api/v1/users/{id}", userId), updateJson))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.doctor").value(true))
+				.andExpect(jsonPath("$.doctor").value(false))
 				.andExpect(jsonPath("$.tags", hasSize(2)))
 				.andExpect(jsonPath("$.tags[0].name").value(alpha.getName()))
 				.andExpect(jsonPath("$.tags[1].name").value(zebra.getName()));
@@ -231,36 +235,119 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("PUT /api/v1/users/{id} — unknown tag id")
 	void update_unknownTag_returns400() throws Exception {
 		userRepository.deleteAll();
-		UserWriteRequest badTagsCreate = userPayload("bad-tags", List.of(), false);
+		User doctor = userRepository.save(new User("doc-bad-tags", true));
+		UserCreateRequest badTagsCreate = userCreatePayload("bad-tags", false);
 		String createdJson = objectMapper.writeValueAsString(badTagsCreate);
 		MvcResult badCreated =
 				mockMvc.perform(json(post("/api/v1/users"), createdJson))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(badTagsCreate, badCreated, 0);
+		assertUserPostBodyMatches(badTagsCreate, badCreated);
 		String location = badCreated.getResponse().getHeader("Location");
 		UUID userId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
 		List<UUID> missing = List.of(UUID.randomUUID());
-		String bad = objectMapper.writeValueAsString(userPayload("bad-tags", missing, false));
+		String bad = objectMapper.writeValueAsString(userUpdatePayload("bad-tags", missing, false, doctor.getId()));
 		mockMvc.perform(json(put("/api/v1/users/{id}", userId), bad))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("TAG_REFERENCES_INVALID"));
 	}
 
 	@Test
+	@DisplayName("PUT /api/v1/users/{id} — alteração de tagIds sem assignedByDoctorId → 400")
+	void update_tagsChangeWithoutDoctor_returns400() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		var catalogueTag = tagRepository.save(new com.rb.multi.agent.entity.Tag("only-with-doc", null, TagCategory.OTHER));
+		UserCreateRequest patient = userCreatePayload("needs-med", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andExpect(header().exists("Location"))
+						.andReturn();
+		String location = created.getResponse().getHeader("Location");
+		UUID uid = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", uid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload("needs-med", List.of(catalogueTag.getId()), false, null))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_DOCTOR_REQUIRED"));
+	}
+
+	@Test
+	@DisplayName("PUT … — médico válido primeiro; segundo PUT com utilizador paciente como atribuídor → 403")
+	void update_actorNotDoctor_returns403() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		var catalogueTag =
+				tagRepository.save(new com.rb.multi.agent.entity.Tag("actor-test", null, TagCategory.SLEEP));
+		User realDoctor = userRepository.save(new User("doctor-actor-it", true));
+		User faker = userRepository.save(new User("not-doc-assign-it", false));
+		UserCreateRequest patient = userCreatePayload("patient-actor-it", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID pid = UUID.fromString(
+				created.getResponse().getHeader("Location").substring(
+						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload(
+												"patient-actor-it", List.of(catalogueTag.getId()), false, realDoctor.getId()))))
+				.andExpect(status().isOk());
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload("patient-actor-it", List.of(), false, faker.getId()))))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("ASSIGNING_ACTOR_NOT_DOCTOR"));
+	}
+
+	@Test
+	@DisplayName("PUT … — conta com isDoctor não recebe tagIds de paciente → 400")
+	void update_doctorAccountTags_returns400() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		var catalogueTag =
+				tagRepository.save(new com.rb.multi.agent.entity.Tag("no-clinician-tags-it", null, TagCategory.SLEEP));
+		User clinicianAssigner = userRepository.save(new User("assigner-cli-it", true));
+		UserCreateRequest clinicianPatient = userCreatePayload("clin-account-it", true);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(clinicianPatient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID cid = UUID.fromString(
+				created.getResponse().getHeader("Location").substring(
+						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", cid),
+								objectMapper.writeValueAsString(
+										userUpdatePayload(
+												"clin-account-it", List.of(catalogueTag.getId()), true, clinicianAssigner.getId()))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("TAG_ASSIGNMENT_PATIENT_ONLY"));
+	}
+
+	@Test
 	@DisplayName("POST /api/v1/users — duplicate public code conflict")
 	void create_duplicateCode_returns409() throws Exception {
 		userRepository.deleteAll();
-		UserWriteRequest dup = userPayload("dup-x", List.of(), false);
+		UserCreateRequest dup = userCreatePayload("dup-x", false);
 		MvcResult first =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(dup)))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(dup, first, 0);
-		mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userPayload("dup-x", List.of(), false))))
+		assertUserPostBodyMatches(dup, first);
+		mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("dup-x", false))))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USER_CODE_CONFLICT"));
 	}
@@ -269,14 +356,14 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("DELETE /api/v1/users/{id} — 204")
 	void delete_existing() throws Exception {
 		userRepository.deleteAll();
-		UserWriteRequest delSent = userPayload("to-del", List.of(), false);
+		UserCreateRequest delSent = userCreatePayload("to-del", false);
 		String payload = objectMapper.writeValueAsString(delSent);
 		MvcResult createdDel =
 				mockMvc.perform(json(post("/api/v1/users"), payload))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(delSent, createdDel, 0);
+		assertUserPostBodyMatches(delSent, createdDel);
 		String location = createdDel.getResponse().getHeader("Location");
 		UUID id = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 
@@ -297,7 +384,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("POST /api/v1/users — Bean Validation (blank code)")
 	void create_invalid_returns400Validation() throws Exception {
 		String json =
-				objectMapper.writeValueAsString(new UserWriteRequest("", false, null, null, null, null, null, null, List.of()));
+				objectMapper.writeValueAsString(new UserCreateRequest("", false, null, null, null, null, null, null));
 		mockMvc.perform(json(post("/api/v1/users"), json))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -308,26 +395,26 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("PUT /api/v1/users/{id} — code conflict against another existing user")
 	void update_codeConflict_returns409() throws Exception {
 		userRepository.deleteAll();
-		UserWriteRequest ownerOne = userPayload("owner-one", List.of(), false);
+		UserCreateRequest ownerOne = userCreatePayload("owner-one", false);
 		MvcResult createdOne =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(ownerOne)))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(ownerOne, createdOne, 0);
+		assertUserPostBodyMatches(ownerOne, createdOne);
 
-		UserWriteRequest ownerTwo = userPayload("owner-two", List.of(), false);
+		UserCreateRequest ownerTwo = userCreatePayload("owner-two", false);
 		MvcResult createdTwo =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(ownerTwo)))
 						.andExpect(status().isCreated())
 						.andExpect(header().exists("Location"))
 						.andReturn();
-		assertUserPostBodyMatches(ownerTwo, createdTwo, 0);
+		assertUserPostBodyMatches(ownerTwo, createdTwo);
 		String loc = createdTwo.getResponse().getHeader("Location");
 		UUID idTwo = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
 
 		String conflict =
-				objectMapper.writeValueAsString(userPayload("owner-one", List.of(), false));
+				objectMapper.writeValueAsString(userUpdatePayload("owner-one", List.of(), false, null));
 		mockMvc.perform(json(put("/api/v1/users/{id}", idTwo), conflict))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USER_CODE_CONFLICT"));

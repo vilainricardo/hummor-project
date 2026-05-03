@@ -1,5 +1,6 @@
 package com.rb.multi.agent.service;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -12,10 +13,18 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+
+import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.entity.User;
+import com.rb.multi.agent.entity.UserTagAssignment;
+import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
+import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
+import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
@@ -30,10 +39,12 @@ public class UserService {
 
 	private final UserRepository userRepository;
 	private final TagRepository tagRepository;
+	private final EntityManager entityManager;
 
-	public UserService(UserRepository userRepository, TagRepository tagRepository) {
+	public UserService(UserRepository userRepository, TagRepository tagRepository, EntityManager entityManager) {
 		this.userRepository = userRepository;
 		this.tagRepository = tagRepository;
+		this.entityManager = entityManager;
 	}
 
 	/** EN: Ordered table scan surrogate for admin surfaces. PT-BR: Lista completa adequada para ecrãs administrativos. */
@@ -54,16 +65,16 @@ public class UserService {
 		return userRepository.findWithTagsByCode(code);
 	}
 
-	/** EN: Inserts enforcing normalized unique {@code code}. PT-BR: Inserção com {@code code} único normalizado. */
+	/** EN: Inserts enforcing normalized unique {@code code}; tag associations start empty until update. PT-BR: Inserção com {@code code} único; tags apenas após actualização. */
 	@Transactional
-	public User create(UserWriteRequest request) {
+	public User create(UserCreateRequest request) {
 		String normalizedCode = normalizeCode(request.code());
 		if (userRepository.existsByCode(normalizedCode)) {
 			throw new DuplicateUserCodeException(normalizedCode);
 		}
 		User entity = new User(normalizedCode, request.doctor());
-		applyProfile(entity, request);
-		syncTags(entity, request);
+		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
+				request.addressLine());
 		return userRepository.save(entity);
 	}
 
@@ -81,7 +92,8 @@ public class UserService {
 
 		entity.setCode(normalizedCode);
 		entity.setDoctor(request.doctor());
-		applyProfile(entity, request);
+		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
+				request.addressLine());
 		syncTags(entity, request);
 		return userRepository.save(entity);
 	}
@@ -95,38 +107,71 @@ public class UserService {
 		userRepository.deleteById(id);
 	}
 
-	/** EN: Copies demographics from DTO respecting nullability semantics. PT-BR: Copia dados demográficos do DTO com semântica de nulos esperada. */
-	private static void applyProfile(User entity, UserWriteRequest request) {
-		entity.setAge(request.age());
-		entity.setProfession(request.profession());
-		entity.setPostalCode(request.postalCode());
-		entity.setCountry(request.country());
-		entity.setCity(request.city());
-		entity.setAddressLine(request.addressLine());
+	/** EN: Copies demographics respecting nullability semantics. PT-BR: Copia dados demográficos com semântica de nulos esperada. */
+	private static void applyProfile(
+			User entity,
+			Integer age,
+			String profession,
+			String postalCode,
+			String country,
+			String city,
+			String addressLine) {
+		entity.setAge(age);
+		entity.setProfession(profession);
+		entity.setPostalCode(postalCode);
+		entity.setCountry(country);
+		entity.setCity(city);
+		entity.setAddressLine(addressLine);
 	}
 
 	/**
-	 * <p><b>EN:</b> Replaces join-table rows wholesale from {@link UserWriteRequest#tagIds()}, preserving first-seen UUID order.</p>
-	 * <p><b>PT-BR:</b> Substitui linhas da junção segundo {@link UserWriteRequest#tagIds()}, mantendo a ordem de primeiro aparecimento.</p>
+	 * <p><b>EN:</b> Replaces clinician assignments when {@link UserWriteRequest#tagIds()} differs from persisted state;
+	 * preserves first-seen UUID order; assigns at most five tags per patient; requires acting doctor identity.</p>
+	 * <p><b>PT-BR:</b> Substitui atribuições do clínico quando {@code tagIds} difere do estado; até cinco etiquetas por
+	 * paciente; exige médico responsável quando há alteração.</p>
 	 */
 	private void syncTags(User entity, UserWriteRequest request) {
 		List<UUID> incoming = request.tagIds();
-		if (incoming.isEmpty()) {
-			entity.getTags().clear();
+		LinkedHashSet<UUID> uniqueOrdered = incoming.stream().collect(Collectors.toCollection(LinkedHashSet::new));
+		Set<UUID> currentIds =
+				entity.getTagAssignments().stream().map(a -> a.getTag().getId()).collect(Collectors.toSet());
+		if (currentIds.equals(uniqueOrdered)) {
 			return;
 		}
-		Set<UUID> uniqueOrdered = incoming.stream().collect(Collectors.toCollection(LinkedHashSet::new));
-		List<Tag> resolved = tagRepository.findAllById(uniqueOrdered);
-		if (resolved.size() != uniqueOrdered.size()) {
-			Set<UUID> foundIds = resolved.stream().map(Tag::getId).collect(Collectors.toSet());
-			Set<UUID> missing =
-					uniqueOrdered.stream().filter(id -> !foundIds.contains(id)).collect(Collectors.toCollection(LinkedHashSet::new));
-			throw new UnknownTagReferencesException(missing);
+
+		UUID assigningDoctorId = request.assignedByDoctorId();
+		if (assigningDoctorId == null) {
+			throw new TagAssignmentDoctorRequiredException();
 		}
-		Map<UUID, Tag> byId = resolved.stream().collect(Collectors.toMap(Tag::getId, t -> t, (a, b) -> a));
-		entity.getTags().clear();
+		if (entity.isDoctor()) {
+			throw new TagAssignmentPatientOnlyException(entity.getCode());
+		}
+
+		User assigningDoctor =
+				userRepository.findById(assigningDoctorId).orElseThrow(() -> new AssigningDoctorNotFoundException(assigningDoctorId));
+		if (!assigningDoctor.isDoctor()) {
+			throw new AssigningActorNotDoctorException(assigningDoctor.getCode());
+		}
+
+		Map<UUID, Tag> byId;
+		if (uniqueOrdered.isEmpty()) {
+			byId = Map.of();
+		} else {
+			List<Tag> resolved = tagRepository.findAllById(uniqueOrdered);
+			if (resolved.size() != uniqueOrdered.size()) {
+				Set<UUID> foundIds = resolved.stream().map(Tag::getId).collect(Collectors.toSet());
+				Set<UUID> missing =
+						uniqueOrdered.stream().filter(id -> !foundIds.contains(id)).collect(Collectors.toCollection(LinkedHashSet::new));
+				throw new UnknownTagReferencesException(missing);
+			}
+			byId = resolved.stream().collect(Collectors.toMap(Tag::getId, t -> t, (a, b) -> a));
+		}
+
+		entity.getTagAssignments().clear();
+		entityManager.flush();
+		Instant assignedAt = Instant.now();
 		for (UUID id : uniqueOrdered) {
-			entity.getTags().add(Objects.requireNonNull(byId.get(id)));
+			new UserTagAssignment(entity, Objects.requireNonNull(byId.get(id)), assigningDoctor, assignedAt);
 		}
 	}
 

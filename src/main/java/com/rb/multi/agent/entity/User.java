@@ -1,28 +1,30 @@
 package com.rb.multi.agent.entity;
 
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
  * <p><b>EN:</b> Every account is a patient first; clinician capabilities use {@link #isDoctor()}; column {@code is_doctor}.
- * SAD §7.2 (<code>users</code>). Optional catalogue links via {@link #getTags()} / <code>user_tags</code>.</p>
+ * SAD §7.2 (<code>users</code>). Optional patient catalogue tags via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
  * <p><b>PT-BR:</b> Toda conta é paciente primeiro; função clínica via {@link #isDoctor()}; coluna {@code is_doctor}.
- * SAD §7.2 (<code>users</code>). Ligações opcionais ao catálogo global via {@link #getTags()} / tabela <code>user_tags</code>.</p>
+ * SAD §7.2 (<code>users</code>). Etiquetas de catálogo para pacientes via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
  */
 @Entity
 @Table(name = "users")
@@ -59,16 +61,9 @@ public class User {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	/**
-	 * <p><b>EN:</b> Subset of rows from <code>tags</code>; join table <code>user_tags</code> (lazy).</p>
-	 * <p><b>PT-BR:</b> Subconjunto do catálogo <code>tags</code>; tabela de junção <code>user_tags</code> (lazy).</p>
-	 */
-	@ManyToMany(fetch = FetchType.LAZY)
-	@JoinTable(
-			name = "user_tags",
-			joinColumns = @JoinColumn(name = "user_id", nullable = false),
-			inverseJoinColumns = @JoinColumn(name = "tag_id", nullable = false))
-	private Set<Tag> tags = new HashSet<>();
+	/** EN: Patient-to-tag memberships with clinician provenance (lazy). PT-BR: Ligações paciente–tag com registo do clínico (lazy). */
+	@OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+	private Set<UserTagAssignment> tagAssignments = new LinkedHashSet<>();
 
 	/** EN: JPA-only. PT-BR: Apenas JPA. */
 	protected User() {
@@ -178,12 +173,26 @@ public class User {
 		this.createdAt = createdAt;
 	}
 
+	/** EN: Mutable set managed by JPA; avoids duplicate refs from join fetch. PT-BR: Set JPA; evita refs duplicadas em fetch joins. */
+	public Set<UserTagAssignment> getTagAssignments() {
+		return tagAssignments;
+	}
+
 	/**
-	 * <p><b>EN:</b> Mutable collection managed by JPA; callers replace membership via clear/addAll in service layer.</p>
-	 * <p><b>PT-BR:</b> Coleção gerida pelo JPA; a camada de serviço altera membros com clear/addAll.</p>
+	 * <p><b>EN:</b> Unique catalogue tags from clinician-backed assignments only — read snapshot, not for persistence.</p>
+	 * <p><b>PT-BR:</b> Etiquetas únicas do catálogo apenas com linhas atribuídas por médicos — leitura, não usar para persistir.</p>
 	 */
 	public Set<Tag> getTags() {
-		return tags;
+		Map<UUID, Tag> unique =
+				tagAssignments.stream()
+						.filter(a -> a.getAssignedBy() != null && a.getAssignedBy().isDoctor())
+						.collect(
+								Collectors.toMap(
+										a -> a.getTag().getId(),
+										UserTagAssignment::getTag,
+										(existing, duplicate) -> existing,
+										LinkedHashMap::new));
+		return new LinkedHashSet<>(unique.values());
 	}
 
 	@Override

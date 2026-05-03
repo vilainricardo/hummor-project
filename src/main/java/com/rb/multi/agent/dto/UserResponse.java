@@ -2,11 +2,14 @@ package com.rb.multi.agent.dto;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.entity.User;
+import com.rb.multi.agent.entity.UserTagAssignment;
 
 /**
  * <p><b>EN:</b> Read-model DTO for {@link User} responses.</p>
@@ -25,9 +28,21 @@ public record UserResponse(
 		Instant createdAt,
 		List<TagResponse> tags) {
 
-	/** EN: Maps entity to outbound JSON. PT-BR: Converte entidade para JSON de saída. */
+	/**
+	 * <p><b>EN:</b> Maps entity to JSON; {@code tags} lists each catalogue tag once, only from clinician assignments.</p>
+	 * <p><b>PT-BR:</b> Converte entidade para JSON; {@code tags} lista cada etiqueta do catálogo uma vez, só com atribuição por médico.</p>
+	 */
 	public static UserResponse from(User entity) {
-		List<TagResponse> tagList = entity.getTags().stream()
+		var uniqueByTagId = new LinkedHashMap<UUID, Tag>();
+		for (UserTagAssignment a : entity.getTagAssignments()) {
+			var assigner = a.getAssignedBy();
+			if (assigner == null || !assigner.isDoctor()) {
+				continue;
+			}
+			Tag tag = a.getTag();
+			uniqueByTagId.putIfAbsent(tag.getId(), tag);
+		}
+		List<TagResponse> tagList = uniqueByTagId.values().stream()
 				.sorted(Comparator.comparing(t -> t.getName().toLowerCase(Locale.ROOT)))
 				.map(TagResponse::from)
 				.toList();

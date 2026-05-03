@@ -18,8 +18,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.rb.multi.agent.dto.ApiErrorResponse;
 import com.rb.multi.agent.dto.ApiProblemCode;
+import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
+import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.TagAssignmentDoctorRequiredException;
+import com.rb.multi.agent.exception.TagAssignmentPatientOnlyException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
@@ -114,6 +118,58 @@ public class ApiExceptionHandler {
 				HttpStatus.CONFLICT,
 				ApiProblemCode.USER_CODE_CONFLICT,
 				msg("error.user.duplicateCode", ex.getCode()),
+				null);
+	}
+
+	/** EN: Tag set changed without doctor reference. PT-BR: Conjunto de tags alterado sem médico atribuídor. */
+	@ExceptionHandler(TagAssignmentDoctorRequiredException.class)
+	public ResponseEntity<ApiErrorResponse> tagAssignmentDoctorRequired(
+			TagAssignmentDoctorRequiredException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.TAG_ASSIGNMENT_DOCTOR_REQUIRED,
+				msg("error.user.tagAssignment.doctorRequired"),
+				null);
+	}
+
+	/** EN: Acting doctor UUID not found. PT-BR: UUID do médico não encontrado. */
+	@ExceptionHandler(AssigningDoctorNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> assigningDoctorNotFound(
+			AssigningDoctorNotFoundException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.NOT_FOUND,
+				ApiProblemCode.ASSIGNING_DOCTOR_NOT_FOUND,
+				msg("error.user.tagAssignment.assigningDoctorNotFound", ex.doctorId().toString()),
+				null);
+	}
+
+	/** EN: Referenced actor is not a doctor. PT-BR: Utilizador referenciado não é médico. */
+	@ExceptionHandler(AssigningActorNotDoctorException.class)
+	public ResponseEntity<ApiErrorResponse> assigningActorNotDoctor(
+			AssigningActorNotDoctorException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.FORBIDDEN,
+				ApiProblemCode.ASSIGNING_ACTOR_NOT_DOCTOR,
+				msg("error.user.tagAssignment.actorNotDoctor", ex.actorCode()),
+				null);
+	}
+
+	/** EN: Tags allowed only on patient accounts. PT-BR: Etiquetas só em contas paciente. */
+	@ExceptionHandler(TagAssignmentPatientOnlyException.class)
+	public ResponseEntity<ApiErrorResponse> tagAssignmentPatientOnly(
+			TagAssignmentPatientOnlyException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.TAG_ASSIGNMENT_PATIENT_ONLY,
+				msg("error.user.tagAssignment.patientOnly", ex.targetCode()),
 				null);
 	}
 

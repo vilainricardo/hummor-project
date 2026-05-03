@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.exception.UserNotFoundException;
@@ -58,9 +59,9 @@ public class UserController {
 				.orElseThrow(() -> UserNotFoundException.byCode(code));
 	}
 
-	/** EN: Registers profile + {@code Location}. PT-BR: Regista perfil devolvendo cabeçalho {@code Location}. */
+	/** EN: Registers profile + {@code Location} (no tag links on create). PT-BR: Regista perfil + {@code Location} (sem tags na criação). */
 	@PostMapping
-	public ResponseEntity<UserResponse> create(@Valid @RequestBody UserWriteRequest request) {
+	public ResponseEntity<UserResponse> create(@Valid @RequestBody UserCreateRequest request) {
 		var saved = userService.create(request);
 		URI location = ServletUriComponentsBuilder.fromCurrentRequest()
 				.path("/{id}")

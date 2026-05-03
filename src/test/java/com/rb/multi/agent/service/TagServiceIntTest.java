@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+
 import com.rb.multi.agent.dto.TagWriteRequest;
 import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.entity.TagCategory;
@@ -36,6 +38,9 @@ class TagServiceIntTest {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	@BeforeEach
 	void purge() {
@@ -82,7 +87,7 @@ class TagServiceIntTest {
 		var persisted =
 				tagService.create(new TagWriteRequest(" spaced-name ", "     ", TagCategory.LOW_MOOD));
 		tagRepository.flush();
-		tagRepository.clear();
+		entityManager.clear();
 
 		var reloaded = tagRepository.findById(persisted.getId()).orElseThrow();
 		assertThat(reloaded.getName()).isEqualTo("spaced-name");
