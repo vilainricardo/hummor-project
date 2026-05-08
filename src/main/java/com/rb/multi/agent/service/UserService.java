@@ -11,8 +11,11 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
+import com.rb.multi.agent.entity.Doctor;
 import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.entity.UserTagAssignment;
@@ -24,6 +27,7 @@ import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
+import com.rb.multi.agent.repository.DoctorRepository;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
 import com.rb.multi.agent.security.PasswordHasher;
@@ -42,11 +46,20 @@ public class UserService {
 	private final UserRepository userRepository;
 	private final TagRepository tagRepository;
 	private final PasswordHasher passwordHasher;
+	private final DoctorRepository doctorRepository;
+	private final EntityManager entityManager;
 
-	public UserService(UserRepository userRepository, TagRepository tagRepository, PasswordHasher passwordHasher) {
+	public UserService(
+			UserRepository userRepository,
+			TagRepository tagRepository,
+			PasswordHasher passwordHasher,
+			DoctorRepository doctorRepository,
+			EntityManager entityManager) {
 		this.userRepository = userRepository;
 		this.tagRepository = tagRepository;
 		this.passwordHasher = passwordHasher;
+		this.doctorRepository = doctorRepository;
+		this.entityManager = entityManager;
 	}
 
 	/** EN: Ordered table scan surrogate for admin surfaces. PT-BR: Lista completa adequada para ecrãs administrativos. */
@@ -78,7 +91,7 @@ public class UserService {
 		if (userRepository.existsByEmail(normalizedEmail)) {
 			throw new DuplicateUserEmailException(normalizedEmail);
 		}
-		User entity = new User(normalizedCode, request.doctor());
+		User entity = request.doctor() ? new Doctor(normalizedCode) : new User(normalizedCode);
 		entity.setEmail(normalizedEmail);
 		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
 				request.addressLine());
@@ -104,6 +117,22 @@ public class UserService {
 				.ifPresent(other -> {
 					throw new DuplicateUserEmailException(normalizedEmail);
 				});
+
+		UUID entityId = entity.getId();
+		boolean becomingDoctor = request.doctor() && !(entity instanceof Doctor);
+		boolean removingDoctor = !request.doctor() && entity instanceof Doctor;
+		if (becomingDoctor) {
+			doctorRepository.insertDoctorRowIfAbsent(entityId);
+			entityManager.flush();
+			entityManager.clear();
+			entity = userRepository.findWithTagsById(entityId).orElseThrow(() -> UserNotFoundException.byId(entityId));
+		}
+		if (removingDoctor) {
+			doctorRepository.deleteDoctorRow(entityId);
+			entityManager.flush();
+			entityManager.clear();
+			entity = userRepository.findWithTagsById(entityId).orElseThrow(() -> UserNotFoundException.byId(entityId));
+		}
 
 		entity.setCode(normalizedCode);
 		entity.setEmail(normalizedEmail);

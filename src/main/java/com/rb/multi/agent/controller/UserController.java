@@ -16,12 +16,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.rb.multi.agent.dto.MutualDoctorCodeRequest;
+import com.rb.multi.agent.dto.MutualDoctorPatientLinkResponse;
+import com.rb.multi.agent.dto.MutualPatientCodeRequest;
 import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.UserNotFoundException;
+import com.rb.multi.agent.service.MutualDoctorPatientLinkService;
 import com.rb.multi.agent.service.UserService;
 
 import jakarta.validation.Valid;
@@ -35,9 +39,11 @@ import jakarta.validation.Valid;
 public class UserController {
 
 	private final UserService userService;
+	private final MutualDoctorPatientLinkService mutualDoctorPatientLinkService;
 
-	public UserController(UserService userService) {
+	public UserController(UserService userService, MutualDoctorPatientLinkService mutualDoctorPatientLinkService) {
 		this.userService = userService;
+		this.mutualDoctorPatientLinkService = mutualDoctorPatientLinkService;
 	}
 
 	/** EN: Full user list projection. PT-BR: Lista todos os utilizadores (projeção de leitura). */
@@ -78,6 +84,20 @@ public class UserController {
 	public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UserWriteRequest request) {
 		var saved = userService.update(id, request);
 		return UserResponse.from(saved);
+	}
+
+	/** EN: Patient confirms intent to bind to a doctor identified by public {@code doctorCode}. PT-BR: Paciente pede vínculo com médico pelo code. */
+	@PostMapping("/{patientUserId}/mutual-links/doctor-code")
+	public MutualDoctorPatientLinkResponse mutualLinkPatientTowardDoctor(
+			@PathVariable UUID patientUserId, @Valid @RequestBody MutualDoctorCodeRequest body) {
+		return mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patientUserId, body.doctorCode());
+	}
+
+	/** EN: Doctor confirms intent to bind to patient identified by public {@code patientCode}. PT-BR: Médico pede vínculo com paciente pelo code. */
+	@PostMapping("/{doctorUserId}/mutual-links/patient-code")
+	public MutualDoctorPatientLinkResponse mutualLinkDoctorTowardPatient(
+			@PathVariable UUID doctorUserId, @Valid @RequestBody MutualPatientCodeRequest body) {
+		return mutualDoctorPatientLinkService.doctorAcknowledgesPatient(doctorUserId, body.patientCode());
 	}
 
 	/** EN: Clínico associa ao paciente uma etiqueta existente no catálogo. PT-BR: Médico liga ao paciente uma tag do catálogo. */

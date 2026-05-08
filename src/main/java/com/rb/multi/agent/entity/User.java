@@ -17,18 +17,22 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
  * <p><b>EN:</b> Every account is a patient first; clinician capabilities use {@link #isDoctor()}; column {@code is_doctor}.
- * SAD §7.2 (<code>users</code>). Optional patient catalogue tags via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
- * <p><b>PT-BR:</b> Toda conta é paciente primeiro; função clínica via {@link #isDoctor()}; coluna {@code is_doctor}.
- * SAD §7.2 (<code>users</code>). Etiquetas de catálogo para pacientes via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
+ * SAD §7.2 (<code>users</code>). {@link Doctor} is the JOINED subclass (table {@code doctors}). Optional patient catalogue
+ * tags via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
+ * <p><b>PT-BR:</b> Toda conta é paciente primeiro; perfil médico como subclasse {@link Doctor}.
+ * Etiquetas de catálogo via {@link #getTags()} / <code>user_tag_assignments</code>.</p>
  */
 @Entity
 @Table(name = "users")
+@Inheritance(strategy = InheritanceType.JOINED)
 public class User {
 
 	@Id
@@ -155,7 +159,7 @@ public class User {
 	 * <p><b>PT-BR:</b> Atalho de teste: médico persistível com e-mail único derivado do {@code code}.</p>
 	 */
 	public static User seedClinician(String publicCode) {
-		User u = new User(publicCode, true);
+		Doctor u = new Doctor(publicCode);
 		u.setEmail(integrationSeedEmail(publicCode));
 		return u;
 	}
@@ -270,11 +274,10 @@ public class User {
 		if (this == o) {
 			return true;
 		}
-		if (o == null || getClass() != o.getClass()) {
+		if (!(o instanceof User other)) {
 			return false;
 		}
-		User user = (User) o;
-		return id != null && id.equals(user.id);
+		return id != null && id.equals(other.id);
 	}
 
 	@Override
