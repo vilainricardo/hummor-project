@@ -18,6 +18,7 @@ import com.rb.multi.agent.entity.UserTagAssignment;
 public record UserResponse(
 		UUID id,
 		String code,
+		String email,
 		boolean doctor,
 		Integer age,
 		String profession,
@@ -49,6 +50,7 @@ public record UserResponse(
 		return new UserResponse(
 				entity.getId(),
 				entity.getCode(),
+				entity.getEmail(),
 				entity.isDoctor(),
 				entity.getAge(),
 				entity.getProfession(),

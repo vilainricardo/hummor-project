@@ -24,12 +24,14 @@ import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.DuplicateUserEmailException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
+import com.rb.multi.agent.security.PasswordHasher;
 
 /**
  * EN: {@link UserService} integration tests.
@@ -40,11 +42,35 @@ import com.rb.multi.agent.repository.UserRepository;
 class UserServiceIntTest {
 
 	private static UserCreateRequest createBase(String code, boolean doctor) {
-		return new UserCreateRequest(code, doctor, null, null, null, null, null, null);
+		return new UserCreateRequest(
+				code,
+				User.integrationSeedEmail(code),
+				doctor,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null);
 	}
 
 	private static UserWriteRequest profile(String code, boolean doctor) {
-		return new UserWriteRequest(code, doctor, null, null, null, null, null, null);
+		return new UserWriteRequest(code, User.integrationSeedEmail(code), doctor, null, null, null, null, null, null, null);
+	}
+
+	private static UserWriteRequest profileRenameCode(String newCode, String previousCodeSameEmailSeed, boolean doctor) {
+		return new UserWriteRequest(
+				newCode,
+				User.integrationSeedEmail(previousCodeSameEmailSeed),
+				doctor,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null);
 	}
 
 	@Autowired
@@ -55,6 +81,9 @@ class UserServiceIntTest {
 
 	@Autowired
 	private TagRepository tagRepository;
+
+	@Autowired
+	private PasswordHasher passwordHasher;
 
 	@BeforeEach
 	void purge() {
@@ -68,7 +97,7 @@ class UserServiceIntTest {
 		var inCatalogUnused = tagRepository.save(new Tag("zzz-unused", null, TagCategory.OTHER));
 		var tB = tagRepository.save(new Tag("released-b", null, TagCategory.SLEEP));
 		var tA = tagRepository.save(new Tag("released-a", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-pac901", true));
+		var doc = userRepository.save(User.seedClinician("doc-pac901"));
 
 		var savedPatient = userService.create(createBase("pac-901", false));
 
@@ -90,7 +119,7 @@ class UserServiceIntTest {
 	@DisplayName("flag doctor apenas no perfil; tags mantêm-se quando perfil atualiza doctor")
 	void doctorFlag_toggleOnProfileKeepsAssignments() {
 		var tagged = tagRepository.save(new Tag("role-proof", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-role-proof", true));
+		var doc = userRepository.save(User.seedClinician("doc-role-proof"));
 		var u = userService.create(createBase("patient-role", false));
 
 		userService.assignCatalogueTag(u.getId(), doc.getId(), tagged.getId());
@@ -103,7 +132,7 @@ class UserServiceIntTest {
 	@DisplayName("remover todas as etiquetas desse médico deixa paciente sem tags desse médico")
 	void removeAllTagsForDoctor_clearsSlice() {
 		var t = tagRepository.save(new Tag("solo", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-clear", true));
+		var doc = userRepository.save(User.seedClinician("doc-clear"));
 
 		var u = userService.create(createBase("p-clear", false));
 		userService.assignCatalogueTag(u.getId(), doc.getId(), t.getId());
@@ -118,8 +147,8 @@ class UserServiceIntTest {
 	void removeOneClinicianSlice_preservesPeers() {
 		var tagAonly = tagRepository.save(new Tag("solo-a-own", null, TagCategory.SLEEP));
 		var tagBonly = tagRepository.save(new Tag("solo-b-own", null, TagCategory.SLEEP));
-		var docA = userRepository.save(new User("doc-a-slice", true));
-		var docB = userRepository.save(new User("doc-b-slice", true));
+		var docA = userRepository.save(User.seedClinician("doc-a-slice"));
+		var docB = userRepository.save(User.seedClinician("doc-b-slice"));
 
 		var u = userService.create(createBase("p-slices", false));
 		userService.assignCatalogueTag(u.getId(), docA.getId(), tagAonly.getId());
@@ -137,7 +166,7 @@ class UserServiceIntTest {
 	@DisplayName("atribuir duas vezes a mesma tag é idempotente")
 	void assign_sameTagTwice_idempotent() {
 		var tA = tagRepository.save(new Tag("dup-a", null, TagCategory.OTHER));
-		var doc = userRepository.save(new User("doc-dup", true));
+		var doc = userRepository.save(User.seedClinician("doc-dup"));
 
 		var u = userService.create(createBase("p-dup", false));
 
@@ -153,8 +182,8 @@ class UserServiceIntTest {
 	void assign_actorNotDoctor_throws() {
 		var tagged = tagRepository.save(new Tag("need-real-doc", null, TagCategory.OTHER));
 		var extraForFaker = tagRepository.save(new Tag("faker-cant-act", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-real", true));
-		var faker = userRepository.save(new User("fake-doc", false));
+		var doc = userRepository.save(User.seedClinician("doc-real"));
+		var faker = userRepository.save(User.seedPatient("fake-doc"));
 		var patient = userService.create(createBase("p-actor", false));
 		userService.assignCatalogueTag(patient.getId(), doc.getId(), tagged.getId());
 
@@ -166,7 +195,7 @@ class UserServiceIntTest {
 	@DisplayName("conta com isDoctor=true no alvo: pode receber tag de catálogo (paciente sempre; médico é extra)")
 	void assign_targetWithDoctorFlag_succeeds() {
 		var tagged = tagRepository.save(new Tag("clin-has-tags-too", null, TagCategory.OTHER));
-		var doc = userRepository.save(new User("doc-target", true));
+		var doc = userRepository.save(User.seedClinician("doc-target"));
 		var clinicianUser = userService.create(createBase("clin-a", true));
 		userService.assignCatalogueTag(clinicianUser.getId(), doc.getId(), tagged.getId());
 		assertThat(userService.findById(clinicianUser.getId()).orElseThrow().getTags())
@@ -179,7 +208,7 @@ class UserServiceIntTest {
 	void assignThenRemoveOld() {
 		var tKeep = tagRepository.save(new Tag("keep-me", null, TagCategory.SLEEP));
 		var old = tagRepository.save(new Tag("discard-me", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-sub", true));
+		var doc = userRepository.save(User.seedClinician("doc-sub"));
 
 		var u = userService.create(createBase("p-sub", false));
 		userService.assignCatalogueTag(u.getId(), doc.getId(), old.getId());
@@ -194,7 +223,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("assign com UUID de tag inexistente → UnknownTagReferencesException")
 	void assign_unknownTagIds_throws() {
-		var doc = userRepository.save(new User("doc-bad-tags", true));
+		var doc = userRepository.save(User.seedClinician("doc-bad-tags"));
 		var u = userService.create(createBase("p-bad-tags", false));
 		assertThatThrownBy(() -> userService.assignCatalogueTag(u.getId(), doc.getId(), UUID.randomUUID()))
 				.isInstanceOfSatisfying(
@@ -208,6 +237,25 @@ class UserServiceIntTest {
 		userService.create(createBase("  shared  ", false));
 		assertThatThrownBy(() -> userService.create(createBase("shared", false)))
 				.isInstanceOf(DuplicateUserCodeException.class);
+	}
+
+	@Test
+	@DisplayName("email duplicado (mesmo texto normalizado) → DuplicateUserEmailException")
+	void create_duplicateNormalizedEmail_throwsConflict() {
+		userService.create(createBase("person-a", false));
+		UserCreateRequest otherCodeSameEmail =
+				new UserCreateRequest(
+						"person-b",
+						User.integrationSeedEmail("person-a"),
+						false,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null);
+		assertThatThrownBy(() -> userService.create(otherCodeSameEmail)).isInstanceOf(DuplicateUserEmailException.class);
 	}
 
 	@Test
@@ -231,6 +279,83 @@ class UserServiceIntTest {
 	}
 
 	@Test
+	@DisplayName("campo opcional password: grava Argon2id verificável em password_hash")
+	void create_optionalPassword_hashesWithArgon2() {
+		var req =
+				new UserCreateRequest(
+						"pw-user",
+						User.integrationSeedEmail("pw-user"),
+						false,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						"CorrectHorse123");
+		User saved = userService.create(req);
+		User loaded = userRepository.findById(saved.getId()).orElseThrow();
+		assertThat(loaded.getPasswordHash()).isNotBlank();
+		assertThat(loaded.getPasswordHash()).startsWith("$argon2id$");
+		assertThat(passwordHasher.matches("CorrectHorse123", loaded.getPasswordHash())).isTrue();
+	}
+
+	@Test
+	@DisplayName("update sem password não altera password_hash existente")
+	void update_withoutPassword_preservesStoredHash() {
+		var req =
+				new UserCreateRequest(
+						"persist-pw",
+						User.integrationSeedEmail("persist-pw"),
+						false,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						"EightChr1!");
+		User u = userService.create(req);
+		String hashBefore = userRepository.findById(u.getId()).orElseThrow().getPasswordHash();
+		userService.update(u.getId(), profile("persist-pw", false));
+		assertThat(userRepository.findById(u.getId()).orElseThrow().getPasswordHash()).isEqualTo(hashBefore);
+	}
+
+	@Test
+	@DisplayName("update com novo password substitui o hash")
+	void update_withPassword_rotatesStoredHash() {
+		User u =
+				userService.create(
+						new UserCreateRequest(
+								"chg-pw",
+								User.integrationSeedEmail("chg-pw"),
+								false,
+								null,
+								null,
+								null,
+								null,
+								null,
+								null,
+								"FirstPwd9!"));
+		userService.update(
+				u.getId(),
+				new UserWriteRequest(
+						"chg-pw",
+						User.integrationSeedEmail("chg-pw"),
+						false,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						"SecondPw9!"));
+		User loaded = userRepository.findById(u.getId()).orElseThrow();
+		assertThat(passwordHasher.matches("SecondPw9!", loaded.getPasswordHash())).isTrue();
+		assertThat(passwordHasher.matches("FirstPwd9!", loaded.getPasswordHash())).isFalse();
+	}
+
+	@Test
 	@DisplayName("update utilizador inexistente → UserNotFoundException")
 	void update_missingUser_throws() {
 		assertThatThrownBy(() -> userService.update(UUID.randomUUID(), profile("ghost", false)))
@@ -247,14 +372,37 @@ class UserServiceIntTest {
 	}
 
 	@Test
+	@DisplayName("update com e-mail já usado por outro utilizador → DuplicateUserEmailException")
+	void update_conflictWithOtherPersistedEmail_throws() {
+		userService.create(createBase("mary", false));
+		var zed = userService.create(createBase("zed", false));
+		assertThatThrownBy(
+						() ->
+								userService.update(
+										zed.getId(),
+										new UserWriteRequest(
+												"zed",
+												User.integrationSeedEmail("mary"),
+												false,
+												null,
+												null,
+												null,
+												null,
+												null,
+												null,
+												null)))
+				.isInstanceOf(DuplicateUserEmailException.class);
+	}
+
+	@Test
 	@DisplayName("update de perfil mantém tags existentes")
 	void update_profileOnly_preservesTags() {
 		var ta = tagRepository.save(new Tag("stable-left", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-stable", true));
+		var doc = userRepository.save(User.seedClinician("doc-stable"));
 
 		var u = userService.create(createBase("stable-u", false));
 		userService.assignCatalogueTag(u.getId(), doc.getId(), ta.getId());
-		userService.update(u.getId(), profile("stable-u-renamed", false));
+		userService.update(u.getId(), profileRenameCode("stable-u-renamed", "stable-u", false));
 
 		var tags = userService.findById(u.getId()).orElseThrow().getTags().stream().map(Tag::getId).toList();
 
@@ -265,7 +413,7 @@ class UserServiceIntTest {
 	@DisplayName("delete existe remove o agregado; delete id fantasma lança UserNotFoundException")
 	void delete_edgeCases() {
 		var catalogueRow = tagRepository.save(new Tag("alive", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-alive", true));
+		var doc = userRepository.save(User.seedClinician("doc-alive"));
 
 		var u = userService.create(createBase("alive-code", false));
 		userService.assignCatalogueTag(u.getId(), doc.getId(), catalogueRow.getId());
@@ -281,7 +429,7 @@ class UserServiceIntTest {
 	@DisplayName("findAll inclui tags hidratadas")
 	void findAll_includesAssociationsWithTags() {
 		var t = tagRepository.save(new Tag("bulk", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-bulk", true));
+		var doc = userRepository.save(User.seedClinician("doc-bulk"));
 
 		var u1 = userService.create(createBase("l1", false));
 		userService.assignCatalogueTag(u1.getId(), doc.getId(), t.getId());
@@ -303,7 +451,7 @@ class UserServiceIntTest {
 	@DisplayName("borda: assignedByDoctorId inexistente ⇒ AssigningDoctorNotFoundException")
 	void edge_assigningDoctorUnknown_throws() {
 		var t = tagRepository.save(new Tag("edge-ghost-doc", null, TagCategory.OTHER));
-		var doc = userRepository.save(new User("doc-edge-ghost", true));
+		var doc = userRepository.save(User.seedClinician("doc-edge-ghost"));
 		var p = userService.create(createBase("p-ghost-assigner", false));
 		userService.assignCatalogueTag(p.getId(), doc.getId(), t.getId());
 		UUID stranger = UUID.randomUUID();
@@ -317,7 +465,7 @@ class UserServiceIntTest {
 	@DisplayName("borda: até cinco etiquetas distintas por médico no paciente")
 	void edge_fiveDistinct_perClinicianAccepted() {
 		var tags = saveTags("five", 5, TagCategory.OTHER);
-		var doc = userRepository.save(new User("doc-five-cap", true));
+		var doc = userRepository.save(User.seedClinician("doc-five-cap"));
 		var patient = userService.create(createBase("p-five-cap", false));
 		for (Tag t : tags) {
 			userService.assignCatalogueTag(patient.getId(), doc.getId(), t.getId());
@@ -330,8 +478,8 @@ class UserServiceIntTest {
 	void aggregation_twoDoctorsFiveEach_patientShowsTenDistinctTags() {
 		var batchA = saveTags("mA", 5, TagCategory.SLEEP);
 		var batchB = saveTags("mB", 5, TagCategory.OTHER);
-		var docA = userRepository.save(new User("doc-mA-5", true));
-		var docB = userRepository.save(new User("doc-mB-5", true));
+		var docA = userRepository.save(User.seedClinician("doc-mA-5"));
+		var docB = userRepository.save(User.seedClinician("doc-mB-5"));
 		var patient = userService.create(createBase("p-accum", false));
 
 		for (Tag t : batchA) {
@@ -348,8 +496,8 @@ class UserServiceIntTest {
 	@DisplayName("dois médicos: mesma tag ⇒ duas atribuições; paciente vê uma entrada distinta")
 	void sharedCatalogueTag_twoAssignments_oneDistinctTagRead() {
 		var shared = tagRepository.save(new Tag("peer-shared-one", null, TagCategory.SLEEP));
-		var docFirst = userRepository.save(new User("doc-peer-1st", true));
-		var docSecond = userRepository.save(new User("doc-peer-2nd", true));
+		var docFirst = userRepository.save(User.seedClinician("doc-peer-1st"));
+		var docSecond = userRepository.save(User.seedClinician("doc-peer-2nd"));
 		var patient = userService.create(createBase("p-peer-share", false));
 
 		userService.assignCatalogueTag(patient.getId(), docFirst.getId(), shared.getId());
@@ -364,7 +512,7 @@ class UserServiceIntTest {
 	@DisplayName("sexta etiqueta distinta pelo mesmo médico ⇒ TagAssignmentSliceFullException")
 	void edge_sixDistinctForSameDoctor_throws() {
 		var tags = saveTags("six", 6, TagCategory.SLEEP);
-		var doc = userRepository.save(new User("doc-six-reject", true));
+		var doc = userRepository.save(User.seedClinician("doc-six-reject"));
 		var patient = userService.create(createBase("p-six-reject", false));
 		for (int i = 0; i < 5; i++) {
 			userService.assignCatalogueTag(patient.getId(), doc.getId(), tags.get(i).getId());
@@ -377,7 +525,7 @@ class UserServiceIntTest {
 	@DisplayName("remove inexistente ⇒ PatientTagAssignmentNotFoundException")
 	void remove_unknownTriplet_throws() {
 		var shared = tagRepository.save(new Tag("gone", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-miss-rem", true));
+		var doc = userRepository.save(User.seedClinician("doc-miss-rem"));
 		var patient = userService.create(createBase("p-miss-rem", false));
 		assertThatThrownBy(() -> userService.removeCatalogueTag(patient.getId(), doc.getId(), shared.getId()))
 				.isInstanceOf(PatientTagAssignmentNotFoundException.class);
@@ -387,7 +535,7 @@ class UserServiceIntTest {
 	@DisplayName("getTags lista ids únicos na leitura")
 	void edge_findById_returnsUniqueTagIdsReadable() {
 		var lone = tagRepository.save(new Tag("edge-unique-names", null, TagCategory.SLEEP));
-		var doc = userRepository.save(new User("doc-uniq-read", true));
+		var doc = userRepository.save(User.seedClinician("doc-uniq-read"));
 		var patient = userService.create(createBase("p-uniq-read", false));
 		userService.assignCatalogueTag(patient.getId(), doc.getId(), lone.getId());
 		Set<Tag> once = userService.findById(patient.getId()).orElseThrow().getTags();

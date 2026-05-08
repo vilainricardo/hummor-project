@@ -12,6 +12,8 @@ public enum ApiProblemCode {
 	USER_NOT_FOUND_BY_CODE,
 	/** EN: Duplicate public user code. PT-BR: Code de utilizador duplicado. */
 	USER_CODE_CONFLICT,
+	/** EN: Duplicate user email address. PT-BR: E-mail de utilizador duplicado. */
+	USER_EMAIL_CONFLICT,
 	/** EN: Unknown tag by id. PT-BR: Etiqueta inexistente (id). */
 	TAG_NOT_FOUND,
 	/** EN: Unknown tag by name. PT-BR: Etiqueta inexistente (nome). */

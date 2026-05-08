@@ -22,6 +22,7 @@ import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.DuplicateUserEmailException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.TagNotFoundException;
@@ -118,6 +119,17 @@ public class ApiExceptionHandler {
 				HttpStatus.CONFLICT,
 				ApiProblemCode.USER_CODE_CONFLICT,
 				msg("error.user.duplicateCode", ex.getCode()),
+				null);
+	}
+
+	/** EN: Duplicate normalized email address. PT-BR: E-mail já associado a outro utilizador. */
+	@ExceptionHandler(DuplicateUserEmailException.class)
+	public ResponseEntity<ApiErrorResponse> duplicateEmail(DuplicateUserEmailException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.CONFLICT,
+				ApiProblemCode.USER_EMAIL_CONFLICT,
+				msg("error.user.duplicateEmail", ex.getEmail()),
 				null);
 	}
 

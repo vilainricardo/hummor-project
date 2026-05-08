@@ -20,6 +20,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
 	boolean existsByCode(String code);
 
+	Optional<User> findByEmail(String normalizedEmail);
+
+	boolean existsByEmail(String normalizedEmail);
+
 	/** EN: Hydrates catalogue tags eagerly to avoid cartesian explosions in listings. PT-BR: Carrega tags com fetch join nas listagens. */
 	@Query(
 			"select distinct u from User u left join fetch u.tagAssignments ua left join fetch ua.tag "

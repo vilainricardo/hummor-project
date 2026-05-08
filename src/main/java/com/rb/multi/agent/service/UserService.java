@@ -2,6 +2,7 @@ package com.rb.multi.agent.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -18,28 +19,34 @@ import com.rb.multi.agent.entity.UserTagAssignment;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
+import com.rb.multi.agent.exception.DuplicateUserEmailException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
+import com.rb.multi.agent.security.PasswordHasher;
 
 /**
- * <p><b>EN:</b> Application service coordinating {@link User} lifecycle rules (code uniqueness + profile mapping).</p>
- * <p><b>PT-BR:</b> Serviço de aplicação com regras de ciclo de vida de {@link User} (unicidade do code + mapeamento de perfil).</p>
+ * <p><b>EN:</b> Application service coordinating {@link User} lifecycle rules (unique {@code code}, unique {@code email},
+ * profile mapping).</p>
+ * <p><b>PT-BR:</b> Serviço com regras de {@link User} ({@code code} único, {@code email} único, perfil).</p>
  */
 @Service
 public class UserService {
 
+	private static final int MIN_PASSWORD_LENGTH = 8;
 	private static final int MAX_DISTINCT_TAGS_PER_CLINICIAN_PER_PATIENT = 5;
 
 	private final UserRepository userRepository;
 	private final TagRepository tagRepository;
+	private final PasswordHasher passwordHasher;
 
-	public UserService(UserRepository userRepository, TagRepository tagRepository) {
+	public UserService(UserRepository userRepository, TagRepository tagRepository, PasswordHasher passwordHasher) {
 		this.userRepository = userRepository;
 		this.tagRepository = tagRepository;
+		this.passwordHasher = passwordHasher;
 	}
 
 	/** EN: Ordered table scan surrogate for admin surfaces. PT-BR: Lista completa adequada para ecrãs administrativos. */
@@ -60,16 +67,22 @@ public class UserService {
 		return userRepository.findWithTagsByCode(code);
 	}
 
-	/** EN: Inserts enforcing normalized unique {@code code}; tag associations start empty until catalogue-tag endpoints. PT-BR: Inserção com {@code code} único; tags apenas via endpoints dedicados. */
+	/** EN: Inserts enforcing normalized unique {@code code} and {@code email}; tags start empty until catalogue-tag endpoints. PT-BR: Inserção com {@code code} e e-mail únicos; tags via endpoints dedicados. */
 	@Transactional
 	public User create(UserCreateRequest request) {
 		String normalizedCode = normalizeCode(request.code());
 		if (userRepository.existsByCode(normalizedCode)) {
 			throw new DuplicateUserCodeException(normalizedCode);
 		}
+		String normalizedEmail = normalizeEmail(request.email());
+		if (userRepository.existsByEmail(normalizedEmail)) {
+			throw new DuplicateUserEmailException(normalizedEmail);
+		}
 		User entity = new User(normalizedCode, request.doctor());
+		entity.setEmail(normalizedEmail);
 		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
 				request.addressLine());
+		applyPasswordHashIfPresent(entity, request.password());
 		return userRepository.save(entity);
 	}
 
@@ -85,10 +98,19 @@ public class UserService {
 					throw new DuplicateUserCodeException(normalizedCode);
 				});
 
+		String normalizedEmail = normalizeEmail(request.email());
+		userRepository.findByEmail(normalizedEmail)
+				.filter(other -> !other.getId().equals(entity.getId()))
+				.ifPresent(other -> {
+					throw new DuplicateUserEmailException(normalizedEmail);
+				});
+
 		entity.setCode(normalizedCode);
+		entity.setEmail(normalizedEmail);
 		entity.setDoctor(request.doctor());
 		applyProfile(entity, request.age(), request.profession(), request.postalCode(), request.country(), request.city(),
 				request.addressLine());
+		applyPasswordHashIfPresent(entity, request.password());
 		return userRepository.save(entity);
 	}
 
@@ -163,6 +185,26 @@ public class UserService {
 		userRepository.deleteById(id);
 	}
 
+	/** EN: Non-blank password (after trim) replaces {@code password_hash}; {@code null} or blank leaves column unchanged. PT-BR: Palavra-passe não vazia (após trim) substitui {@code password_hash}; {@code null} ou vazio mantém o valor. */
+	private void applyPasswordHashIfPresent(User entity, String rawPassword) {
+		String normalized = normalizePasswordOrNull(rawPassword);
+		if (normalized == null) {
+			return;
+		}
+		if (normalized.length() < MIN_PASSWORD_LENGTH) {
+			throw new IllegalArgumentException("password must be at least " + MIN_PASSWORD_LENGTH + " characters");
+		}
+		entity.setPasswordHash(passwordHasher.hash(normalized));
+	}
+
+	private static String normalizePasswordOrNull(String raw) {
+		if (raw == null) {
+			return null;
+		}
+		String trimmed = raw.trim();
+		return trimmed.isEmpty() ? null : trimmed;
+	}
+
 	/** EN: Copies demographics respecting nullability semantics. PT-BR: Copia dados demográficos com semântica de nulos esperada. */
 	private static void applyProfile(
 			User entity,
@@ -188,6 +230,18 @@ public class UserService {
 		}
 		if (trimmed.length() > 20) {
 			throw new IllegalArgumentException("code must be at most 20 characters");
+		}
+		return trimmed;
+	}
+
+	/** EN: Trim + lowercase; matches persisted {@link User#setEmail}; Bean Validation catches most blanks. PT-BR: Normalização alinhada a {@link User#setEmail}. */
+	private static String normalizeEmail(String raw) {
+		String trimmed = Objects.requireNonNull(raw, "email").trim().toLowerCase(Locale.ROOT);
+		if (trimmed.isEmpty()) {
+			throw new IllegalArgumentException("email must not be blank");
+		}
+		if (trimmed.length() > 320) {
+			throw new IllegalArgumentException("email must be at most 320 characters");
 		}
 		return trimmed;
 	}

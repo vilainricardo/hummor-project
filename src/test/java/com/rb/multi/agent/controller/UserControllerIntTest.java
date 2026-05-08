@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -23,6 +24,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
@@ -45,14 +48,22 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	private static String inboxForCode(String code) {
+		return code.trim().toLowerCase(Locale.ROOT) + "@controller.int.test.invalid";
+	}
+
 	/** POST: {@link UserCreateRequest} — sem tags (criado sem etiquetas). */
 	private static UserCreateRequest userCreatePayload(String code, boolean doctor) {
-		return new UserCreateRequest(code, doctor, 30, "x", null, null, null, null);
+		return new UserCreateRequest(code, inboxForCode(code), doctor, 30, "x", null, null, null, null, null);
 	}
 
 	/** PUT: {@link UserWriteRequest} apenas perfil. */
 	private static UserWriteRequest userUpdatePayload(String code, boolean doctor) {
-		return new UserWriteRequest(code, doctor, 30, "x", null, null, null, null);
+		return new UserWriteRequest(code, inboxForCode(code), doctor, 30, "x", null, null, null, null, null);
+	}
+
+	private static UserWriteRequest userUpdatePayload(String code, boolean doctor, String email) {
+		return new UserWriteRequest(code, email, doctor, 30, "x", null, null, null, null, null);
 	}
 
 	private String tagAssignJson(UUID assignedByDoctorId, UUID tagId) throws Exception {
@@ -61,6 +72,34 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 
 	private UserResponse readUserResponse(MockHttpServletResponse response) throws Exception {
 		return objectMapper.readValue(response.getContentAsString(StandardCharsets.UTF_8), UserResponse.class);
+	}
+
+	/** EN: Ensures API JSON never leaks credential fields to the frontend. PT-BR: Garante que o JSON não expõe dados de credencial ao frontend. */
+	private void assertJsonTreeHasNoPasswordFields(String jsonBody) {
+		try {
+			JsonNode root = objectMapper.readTree(jsonBody);
+			if (root.isArray()) {
+				for (JsonNode elt : root) {
+					assertUserJsonObjectHasNoPasswordFields(elt);
+				}
+				return;
+			}
+			assertUserJsonObjectHasNoPasswordFields(root);
+		} catch (JsonProcessingException e) {
+			throw new AssertionError("Invalid JSON in response", e);
+		}
+	}
+
+	private static void assertUserJsonObjectHasNoPasswordFields(JsonNode node) {
+		assertThat(node.isObject())
+				.as("Expected JSON object (or array of objects), got: %s", node.getNodeType())
+				.isTrue();
+		assertThat(node.has("password"))
+				.as("Response must not include 'password' (frontend leak)")
+				.isFalse();
+		assertThat(node.has("passwordHash"))
+				.as("Response must not include 'passwordHash' (frontend leak)")
+				.isFalse();
 	}
 
 	/** POST 201: {@link UserResponse} alinhado a {@link UserCreateRequest}; criação não devolve tags ligadas. */
@@ -74,6 +113,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 
 		assertThat(body.id()).isEqualTo(UUID.fromString(rawId));
 		assertThat(body.code()).isEqualTo(sent.code().trim());
+		assertThat(body.email()).isEqualTo(sent.email().trim().toLowerCase(Locale.ROOT));
 		assertThat(body.doctor()).isEqualTo(sent.doctor());
 		assertThat(body.age()).isEqualTo(sent.age());
 		assertThat(body.profession()).isEqualTo(sent.profession());
@@ -92,6 +132,71 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		mockMvc.perform(get("/api/v1/users").accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(0)));
+	}
+
+	@Test
+	@DisplayName("Credenciais: password e password_hash nunca aparecem nas respostas JSON")
+	void responses_neverExposePasswordOrHash_evenWhenPasswordSent() throws Exception {
+		userRepository.deleteAll();
+		UserCreateRequest create =
+				new UserCreateRequest(
+						"pw-leak-guard",
+						inboxForCode("pw-leak-guard"),
+						false,
+						30,
+						"x",
+						null,
+						null,
+						null,
+						null,
+						"LeakTest99");
+		String createJson = objectMapper.writeValueAsString(create);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), createJson))
+						.andExpect(status().isCreated())
+						.andReturn();
+		assertJsonTreeHasNoPasswordFields(created.getResponse().getContentAsString(StandardCharsets.UTF_8));
+
+		String location = created.getResponse().getHeader("Location");
+		UUID id = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
+
+		mockMvc.perform(get("/api/v1/users/{id}", id).accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andDo(
+						r ->
+								assertJsonTreeHasNoPasswordFields(
+										r.getResponse().getContentAsString(StandardCharsets.UTF_8)));
+
+		mockMvc.perform(get("/api/v1/users/by-code/{code}", "pw-leak-guard").accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andDo(
+						r ->
+								assertJsonTreeHasNoPasswordFields(
+										r.getResponse().getContentAsString(StandardCharsets.UTF_8)));
+
+		mockMvc.perform(get("/api/v1/users").accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andDo(
+						r ->
+								assertJsonTreeHasNoPasswordFields(
+										r.getResponse().getContentAsString(StandardCharsets.UTF_8)));
+
+		String putJson =
+				objectMapper.writeValueAsString(
+						new UserWriteRequest(
+								"pw-leak-guard",
+								inboxForCode("pw-leak-guard"),
+								false,
+								30,
+								"x",
+								null,
+								null,
+								null,
+								null,
+								"NewSecret88"));
+		MvcResult updated =
+				mockMvc.perform(json(put("/api/v1/users/{id}", id), putJson)).andExpect(status().isOk()).andReturn();
+		assertJsonTreeHasNoPasswordFields(updated.getResponse().getContentAsString(StandardCharsets.UTF_8));
 	}
 
 	@Test
@@ -158,7 +263,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		tagRepository.deleteAll();
 		var zebra = tagRepository.save(new com.rb.multi.agent.entity.Tag("zzz-zebra", null, TagCategory.OTHER));
 		var alpha = tagRepository.save(new com.rb.multi.agent.entity.Tag("aaa-alpha", null, TagCategory.OTHER));
-		User doctor = userRepository.save(new User("doc-up-tags", true));
+		User doctor = userRepository.save(User.seedClinician("doc-up-tags"));
 
 		UserCreateRequest upTagsCreate = userCreatePayload("up-tags", false);
 		String createdJson = objectMapper.writeValueAsString(upTagsCreate);
@@ -196,7 +301,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("POST …/tag-assignments — unknown tag id")
 	void assign_unknownTag_returns400() throws Exception {
 		userRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-bad-tags", true));
+		User doctor = userRepository.save(User.seedClinician("doc-bad-tags"));
 		UserCreateRequest badTagsCreate = userCreatePayload("bad-tags", false);
 		String createdJson = objectMapper.writeValueAsString(badTagsCreate);
 		MvcResult badCreated =
@@ -223,8 +328,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 				tagRepository.save(new com.rb.multi.agent.entity.Tag("actor-test", null, TagCategory.SLEEP));
 		var fakerExtra =
 				tagRepository.save(new com.rb.multi.agent.entity.Tag("faker-only-extra", null, TagCategory.SLEEP));
-		User realDoctor = userRepository.save(new User("doctor-actor-it", true));
-		User faker = userRepository.save(new User("not-doc-assign-it", false));
+		User realDoctor = userRepository.save(User.seedClinician("doctor-actor-it"));
+		User faker = userRepository.save(User.seedPatient("not-doc-assign-it"));
 		UserCreateRequest patient = userCreatePayload("patient-actor-it", false);
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
@@ -247,7 +352,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		tagRepository.deleteAll();
 		var catalogueTag =
 				tagRepository.save(new com.rb.multi.agent.entity.Tag("clin-can-be-patient", null, TagCategory.SLEEP));
-		User clinicianAssigner = userRepository.save(new User("assigner-cli-it", true));
+		User clinicianAssigner = userRepository.save(User.seedClinician("assigner-cli-it"));
 		UserCreateRequest clinicianPatient = userCreatePayload("clin-account-it", true);
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(clinicianPatient)))
@@ -270,7 +375,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assign_sixthDistinctTag_returns400() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-slice-cap", true));
+		User doctor = userRepository.save(User.seedClinician("doc-slice-cap"));
 		List<UUID> fiveIds =
 				IntStream.range(0, 5)
 						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("cap-" + i, null, TagCategory.SLEEP)))
@@ -300,7 +405,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assign_edge_fiveDistinctTags_returns200AndFiveTagsInBody() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-bv-five", true));
+		User doctor = userRepository.save(User.seedClinician("doc-bv-five"));
 		List<UUID> fiveIds =
 				IntStream.range(0, 5)
 						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("five-" + i, null, TagCategory.OTHER)))
@@ -328,8 +433,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assign_agg_twoCliniciansEachFiveDistinct_tagsLengthTenOnGet() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctorA = userRepository.save(new User("doc-acc-a", true));
-		User doctorB = userRepository.save(new User("doc-acc-b", true));
+		User doctorA = userRepository.save(User.seedClinician("doc-acc-a"));
+		User doctorB = userRepository.save(User.seedClinician("doc-acc-b"));
 		List<UUID> idsA =
 				IntStream.range(0, 5)
 						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("acca-" + i, null, TagCategory.SLEEP)))
@@ -370,8 +475,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("shared-by-two", null, TagCategory.SLEEP));
-		User doctorA = userRepository.save(new User("doc-share-a", true));
-		User doctorB = userRepository.save(new User("doc-share-b", true));
+		User doctorA = userRepository.save(User.seedClinician("doc-share-a"));
+		User doctorB = userRepository.save(User.seedClinician("doc-share-b"));
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-share-u", false))))
 						.andExpect(status().isCreated())
@@ -404,8 +509,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("slice-shared", null, TagCategory.SLEEP));
-		User doctorA = userRepository.save(new User("doc-slc-a", true));
-		User doctorB = userRepository.save(new User("doc-slc-b", true));
+		User doctorA = userRepository.save(User.seedClinician("doc-slc-a"));
+		User doctorB = userRepository.save(User.seedClinician("doc-slc-b"));
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-slc-u", false))))
 						.andExpect(status().isCreated())
@@ -465,7 +570,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void delete_unknownAssignment_returns404() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		User doctor = userRepository.save(new User("doc-del-miss", true));
+		User doctor = userRepository.save(User.seedClinician("doc-del-miss"));
 		var tag = tagRepository.save(new com.rb.multi.agent.entity.Tag("miss-del", null, TagCategory.SLEEP));
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("del-miss-u", false))))
@@ -490,7 +595,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		tagRepository.deleteAll();
 		var tagB = tagRepository.save(new com.rb.multi.agent.entity.Tag("reorder-beta-h", null, TagCategory.OTHER));
 		var tagA = tagRepository.save(new com.rb.multi.agent.entity.Tag("reorder-alpha-h", null, TagCategory.OTHER));
-		User doctor = userRepository.save(new User("doc-reorder-h", true));
+		User doctor = userRepository.save(User.seedClinician("doc-reorder-h"));
 		UserCreateRequest patient = userCreatePayload("bd-reorder-ts", false);
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
@@ -504,7 +609,21 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		mockMvc.perform(json(post("/api/v1/users/{pid}/tag-assignments", pid), tagAssignJson(doctor.getId(), tagA.getId())))
 				.andExpect(status().isOk());
 
-		mockMvc.perform(json(put("/api/v1/users/{id}", pid), objectMapper.writeValueAsString(userUpdatePayload("bd-rt-ren", false))))
+		mockMvc.perform(
+						json(
+								put("/api/v1/users/{id}", pid),
+								objectMapper.writeValueAsString(
+										new UserWriteRequest(
+												"bd-rt-ren",
+												inboxForCode("bd-reorder-ts"),
+												false,
+												30,
+												"x",
+												null,
+												null,
+												null,
+												null,
+												null))))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.tags", hasSize(2)))
 				.andExpect(jsonPath("$.code").value("bd-rt-ren"));
@@ -561,7 +680,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	@DisplayName("POST /api/v1/users — Bean Validation (blank code)")
 	void create_invalid_returns400Validation() throws Exception {
 		String json =
-				objectMapper.writeValueAsString(new UserCreateRequest("", false, null, null, null, null, null, null));
+				objectMapper.writeValueAsString(
+						new UserCreateRequest("", "valid-skeleton@int.test", false, null, null, null, null, null, null, null));
 		mockMvc.perform(json(post("/api/v1/users"), json))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -590,9 +710,54 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		String loc = createdTwo.getResponse().getHeader("Location");
 		UUID idTwo = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
 
-		String conflict = objectMapper.writeValueAsString(userUpdatePayload("owner-one", false));
+		String conflict =
+				objectMapper.writeValueAsString(
+						userUpdatePayload("owner-one", false, inboxForCode("owner-one")));
 		mockMvc.perform(json(put("/api/v1/users/{id}", idTwo), conflict))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USER_CODE_CONFLICT"));
+	}
+
+	@Test
+	@DisplayName("POST /api/v1/users — duplicate email (normalized) conflict")
+	void create_duplicateEmail_returns409() throws Exception {
+		userRepository.deleteAll();
+		String inbox = "shared-overlap@c-it.example.com";
+		UserCreateRequest first = new UserCreateRequest("dup-mail-a", inbox, false, 30, "x", null, null, null, null, null);
+		mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(first)))
+				.andExpect(status().isCreated());
+		UserCreateRequest secondSameEmail =
+				new UserCreateRequest("dup-mail-b", "Shared-Overlap@C-IT.EXAMPLE.COM", false, 30, "x", null, null, null, null, null);
+		mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(secondSameEmail)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("USER_EMAIL_CONFLICT"));
+	}
+
+	@Test
+	@DisplayName("PUT /api/v1/users/{id} — email conflict against another existing user")
+	void update_emailConflict_returns409() throws Exception {
+		userRepository.deleteAll();
+		UserCreateRequest first = userCreatePayload("keep-code-a", false);
+		MvcResult c1 =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(first)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		assertUserPostBodyMatches(first, c1);
+
+		UserCreateRequest second = userCreatePayload("keep-code-b", false);
+		MvcResult c2 =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(second)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		assertUserPostBodyMatches(second, c2);
+
+		String loc = c2.getResponse().getHeader("Location");
+		UUID idB = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+		UserWriteRequest stealEmail =
+				new UserWriteRequest("keep-code-b", inboxForCode("keep-code-a"), false, 30, "x", null, null, null, null, null);
+
+		mockMvc.perform(json(put("/api/v1/users/{id}", idB), objectMapper.writeValueAsString(stealEmail)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("USER_EMAIL_CONFLICT"));
 	}
 }

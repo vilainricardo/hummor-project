@@ -3,6 +3,7 @@ package com.rb.multi.agent.entity;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -36,6 +37,14 @@ public class User {
 
 	@Column(name = "code", length = 20, nullable = false, unique = true)
 	private String code;
+
+	/** EN: Normalized unique inbox (trim + lower case); optional only for legacy rows pre-migration. PT-BR: E-mail único normalizado. */
+	@Column(name = "email", length = 320, unique = true)
+	private String email;
+
+	/** EN: Argon2id-encoded credential; {@code null} for OAuth-only or unset. PT-BR: Credencial codificada Argon2id; {@code null} se só OAuth ou não definido. */
+	@Column(name = "password_hash", columnDefinition = "TEXT")
+	private String passwordHash;
 
 	@Column(name = "is_doctor", nullable = false)
 	private boolean isDoctor;
@@ -107,6 +116,67 @@ public class User {
 
 	public void setCode(String code) {
 		this.code = code;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
+	/**
+	 * <p><b>EN:</b> Persists canonical form (trim, ASCII lower case). {@code null} clears the column (legacy only).</p>
+	 * <p><b>PT-BR:</b> Grava forma canónica (trim, minúsculas). {@code null} limpa a coluna (legado).</p>
+	 */
+	public void setEmail(String email) {
+		if (email == null) {
+			this.email = null;
+			return;
+		}
+		String trimmed = email.trim().toLowerCase(Locale.ROOT);
+		if (trimmed.isEmpty()) {
+			this.email = null;
+			return;
+		}
+		if (trimmed.length() > 320) {
+			throw new IllegalArgumentException("email must be at most 320 characters");
+		}
+		this.email = trimmed;
+	}
+
+	public String getPasswordHash() {
+		return passwordHash;
+	}
+
+	public void setPasswordHash(String passwordHash) {
+		this.passwordHash = passwordHash;
+	}
+
+	/**
+	 * <p><b>EN:</b> Integration-test helper: persisted clinician with deterministic unique email derived from {@code code}.</p>
+	 * <p><b>PT-BR:</b> Atalho de teste: médico persistível com e-mail único derivado do {@code code}.</p>
+	 */
+	public static User seedClinician(String publicCode) {
+		User u = new User(publicCode, true);
+		u.setEmail(integrationSeedEmail(publicCode));
+		return u;
+	}
+
+	/**
+	 * <p><b>EN:</b> Integration-test helper: persisted patient-shaped row with deterministic email.</p>
+	 * <p><b>PT-BR:</b> Atalho de teste: linha tipo paciente com e-mail determinístico.</p>
+	 */
+	public static User seedPatient(String publicCode) {
+		User u = new User(publicCode, false);
+		u.setEmail(integrationSeedEmail(publicCode));
+		return u;
+	}
+
+	/**
+	 * <p><b>EN:</b> Deterministic inbox aligned with uniqueness rules (not for production accounts).</p>
+	 * <p><b>PT-BR:</b> Inbox determinístico alinhado às regras de unicidade (não usar em produção).</p>
+	 */
+	public static String integrationSeedEmail(String publicCode) {
+		String slug = Objects.requireNonNull(publicCode, "publicCode").trim().toLowerCase(Locale.ROOT);
+		return slug + "@seed.integration.invalid";
 	}
 
 	public boolean isDoctor() {
