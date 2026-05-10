@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -348,6 +349,17 @@ public class ApiExceptionHandler {
 				ApiProblemCode.VALIDATION_FAILED,
 				msg("error.validation.summary", summary),
 				fields);
+	}
+
+	/** EN: Login / token endpoint rejected password or unknown user. PT-BR: Credenciais inválidas no login ou token. */
+	@ExceptionHandler(BadCredentialsException.class)
+	public ResponseEntity<ApiErrorResponse> badCredentials(BadCredentialsException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.UNAUTHORIZED,
+				ApiProblemCode.INVALID_CREDENTIALS,
+				msg("error.auth.invalidCredentials"),
+				null);
 	}
 
 	/** EN: Catch-all mapped to sanitized 500 narrative. PT-BR: Último recurso → 500 com mensagem genérica segura. */

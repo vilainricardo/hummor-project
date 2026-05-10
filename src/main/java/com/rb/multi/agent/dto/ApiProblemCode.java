@@ -39,6 +39,13 @@ public enum ApiProblemCode {
 	/** EN: Unhandled server failure. PT-BR: Falha interna não tratada. */
 	INTERNAL_ERROR,
 
+	/** EN: Missing or invalid Bearer JWT. PT-BR: JWT em falta ou inválido. */
+	UNAUTHENTICATED,
+	/** EN: Email/password rejected at token endpoint. PT-BR: E-mail ou palavra-passe recusados. */
+	INVALID_CREDENTIALS,
+	/** EN: Authenticated but not allowed for this resource. PT-BR: Autenticado mas sem permissão para o recurso. */
+	ACCESS_DENIED,
+
 	/** EN: User id is not a doctor profile. PT-BR: O id não é um perfil de médico. */
 	NOT_A_DOCTOR_PROFILE,
 

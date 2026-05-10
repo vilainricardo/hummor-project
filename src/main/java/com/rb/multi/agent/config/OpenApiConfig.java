@@ -6,10 +6,13 @@ import org.springframework.context.annotation.Configuration;
 
 import org.springdoc.core.customizers.OpenApiCustomizer;
 
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 
 /**
  * <p><b>EN:</b> Registers OpenAPI 3 metadata surfaced by Swagger UI (<code>/swagger-ui.html</code>) and JSON
@@ -31,7 +34,19 @@ public class OpenApiConfig {
 						+ "Locales use language+region: `en-US`, `pt-BR`, `es-ES`, `es-MX`, etc. "
 						+ "Send `Accept-Language`; omit → `en-US`.";
 		return new OpenAPI()
-				.info(new Info().title(applicationName + " API").description(description).version("0.0.1"));
+				.info(new Info().title(applicationName + " API").description(description).version("0.0.1"))
+				.components(
+						new Components()
+								.addSecuritySchemes(
+										"bearer-jwt",
+										new SecurityScheme()
+												.type(SecurityScheme.Type.HTTP)
+												.scheme("bearer")
+												.bearerFormat("JWT")
+												.description(
+														"Access token from POST /api/v1/auth/token (email + password). "
+																+ "Send as Authorization: Bearer <token>.")))
+				.addSecurityItem(new SecurityRequirement().addList("bearer-jwt"));
 	}
 
 	/**
