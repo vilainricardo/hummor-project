@@ -32,8 +32,9 @@ import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.service.MoodEntryService;
-import com.rb.multi.agent.service.SleepEntryService;
 import com.rb.multi.agent.service.MutualDoctorPatientLinkService;
+import com.rb.multi.agent.service.SleepEntryService;
+import com.rb.multi.agent.service.UserProfilePresenter;
 import com.rb.multi.agent.service.UserService;
 
 import jakarta.validation.Valid;
@@ -50,29 +51,32 @@ public class UserController {
 	private final MutualDoctorPatientLinkService mutualDoctorPatientLinkService;
 	private final MoodEntryService moodEntryService;
 	private final SleepEntryService sleepEntryService;
+	private final UserProfilePresenter userProfilePresenter;
 
 	public UserController(
 			UserService userService,
 			MutualDoctorPatientLinkService mutualDoctorPatientLinkService,
 			MoodEntryService moodEntryService,
-			SleepEntryService sleepEntryService) {
+			SleepEntryService sleepEntryService,
+			UserProfilePresenter userProfilePresenter) {
 		this.userService = userService;
 		this.mutualDoctorPatientLinkService = mutualDoctorPatientLinkService;
 		this.moodEntryService = moodEntryService;
 		this.sleepEntryService = sleepEntryService;
+		this.userProfilePresenter = userProfilePresenter;
 	}
 
 	/** EN: Full user list projection. PT-BR: Lista todos os utilizadores (projeção de leitura). */
 	@GetMapping
 	public List<UserResponse> list() {
-		return userService.findAll().stream().map(UserResponse::from).toList();
+		return userService.findAll().stream().map(userProfilePresenter::present).toList();
 	}
 
 	/** EN: Loads user by surrogate UUID key. PT-BR: Obtém utilizador pela chave UUID. */
 	@GetMapping("/{id}")
 	public UserResponse getById(@PathVariable UUID id) {
 		return userService.findById(id)
-				.map(UserResponse::from)
+				.map(userProfilePresenter::present)
 				.orElseThrow(() -> UserNotFoundException.byId(id));
 	}
 
@@ -80,7 +84,7 @@ public class UserController {
 	@GetMapping("/by-code/{code}")
 	public UserResponse getByCode(@PathVariable String code) {
 		return userService.findByCode(code)
-				.map(UserResponse::from)
+				.map(userProfilePresenter::present)
 				.orElseThrow(() -> UserNotFoundException.byCode(code));
 	}
 
@@ -131,14 +135,14 @@ public class UserController {
 				.path("/{id}")
 				.buildAndExpand(saved.getId())
 				.toUri();
-		return ResponseEntity.created(location).body(UserResponse.from(saved));
+		return ResponseEntity.created(location).body(userProfilePresenter.present(saved));
 	}
 
 	/** EN: Writes profile demographics + public code uniqueness; excludes catalogue-tags (see catalogue-tag mappings). PT-BR: Perfil e unicidade do code; tags em endpoints dedicados. */
 	@PutMapping("/{id}")
 	public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UserWriteRequest request) {
 		var saved = userService.update(id, request);
-		return UserResponse.from(saved);
+		return userProfilePresenter.present(saved);
 	}
 
 	/** EN: Patient confirms intent to bind to a doctor identified by public {@code doctorCode}. PT-BR: Paciente pede vínculo com médico pelo code. */
@@ -161,7 +165,7 @@ public class UserController {
 			@PathVariable UUID patientId,
 			@Valid @RequestBody PatientSelfTagAssignRequest body) {
 		User saved = userService.selfAssignCatalogueTag(patientId, body.tagId());
-		return UserResponse.from(saved);
+		return userProfilePresenter.present(saved);
 	}
 
 	/** EN: Clínico associa ao paciente uma etiqueta existente no catálogo. PT-BR: Médico liga ao paciente uma tag do catálogo. */
@@ -172,7 +176,7 @@ public class UserController {
 		User saved =
 				userService.assignCatalogueTag(
 						patientId, body.assignedByDoctorId(), body.tagId(), body.critical());
-		return UserResponse.from(saved);
+		return userProfilePresenter.present(saved);
 	}
 
 	/** EN: Remove one catalogue-tag attribution from the clinician slice. PT-BR: Remove uma atribuição de etiqueta do slice do médico. */
@@ -182,7 +186,7 @@ public class UserController {
 			@PathVariable UUID tagId,
 			@RequestParam("assignedByDoctorId") UUID assignedByDoctorId) {
 		User saved = userService.removeCatalogueTag(patientId, assignedByDoctorId, tagId);
-		return UserResponse.from(saved);
+		return userProfilePresenter.present(saved);
 	}
 
 	/** EN: Deletes when row exists — 404 via service otherwise. PT-BR: Remove se existir; serviço gera 404 se não existir. */

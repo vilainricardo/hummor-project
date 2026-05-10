@@ -37,6 +37,7 @@ import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.repository.MoodEntryRepository;
 import com.rb.multi.agent.repository.SleepEntryRepository;
 import com.rb.multi.agent.repository.TagRepository;
+import com.rb.multi.agent.support.CatalogueTags;
 import com.rb.multi.agent.repository.UserRepository;
 
 /** EN: {@link UserController} HTTP contract. PT-BR: Contrato HTTP do {@link UserController}. */
@@ -275,8 +276,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assignTags_sortsAlphabeticallyOnRead() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var zebra = tagRepository.save(new com.rb.multi.agent.entity.Tag("zzz-zebra", null, TagCategory.OTHER));
-		var alpha = tagRepository.save(new com.rb.multi.agent.entity.Tag("aaa-alpha", null, TagCategory.OTHER));
+		var zebra = tagRepository.save(CatalogueTags.seed("zzz-zebra", null, TagCategory.OTHER));
+		var alpha = tagRepository.save(CatalogueTags.seed("aaa-alpha", null, TagCategory.OTHER));
 		User doctor = userRepository.save(User.seedClinician("doc-up-tags"));
 
 		UserCreateRequest upTagsCreate = userCreatePayload("up-tags", false);
@@ -342,9 +343,9 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var catalogueTag =
-				tagRepository.save(new com.rb.multi.agent.entity.Tag("actor-test", null, TagCategory.SLEEP));
+				tagRepository.save(CatalogueTags.seed("actor-test", null, TagCategory.SLEEP));
 		var fakerExtra =
-				tagRepository.save(new com.rb.multi.agent.entity.Tag("faker-only-extra", null, TagCategory.SLEEP));
+				tagRepository.save(CatalogueTags.seed("faker-only-extra", null, TagCategory.SLEEP));
 		User realDoctor = userRepository.save(User.seedClinician("doctor-actor-it"));
 		User faker = userRepository.save(User.seedPatient("not-doc-assign-it"));
 		UserCreateRequest patient = userCreatePayload("patient-actor-it", false);
@@ -368,7 +369,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		var catalogueTag =
-				tagRepository.save(new com.rb.multi.agent.entity.Tag("clin-can-be-patient", null, TagCategory.SLEEP));
+				tagRepository.save(CatalogueTags.seed("clin-can-be-patient", null, TagCategory.SLEEP));
 		User clinicianAssigner = userRepository.save(User.seedClinician("assigner-cli-it"));
 		UserCreateRequest clinicianPatient = userCreatePayload("clin-account-it", true);
 		MvcResult created =
@@ -395,10 +396,10 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		User doctor = userRepository.save(User.seedClinician("doc-slice-cap"));
 		List<UUID> fiveIds =
 				IntStream.range(0, 5)
-						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("cap-" + i, null, TagCategory.SLEEP)))
+						.mapToObj(i -> tagRepository.save(CatalogueTags.seed("cap-" + i, null, TagCategory.SLEEP)))
 						.map(com.rb.multi.agent.entity.Tag::getId)
 						.toList();
-		UUID sixth = tagRepository.save(new com.rb.multi.agent.entity.Tag("cap-six", null, TagCategory.OTHER)).getId();
+		UUID sixth = tagRepository.save(CatalogueTags.seed("cap-six", null, TagCategory.OTHER)).getId();
 		MvcResult created =
 				mockMvc.perform(
 								json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-sixth", false))))
@@ -425,7 +426,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		User doctor = userRepository.save(User.seedClinician("doc-bv-five"));
 		List<UUID> fiveIds =
 				IntStream.range(0, 5)
-						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("five-" + i, null, TagCategory.OTHER)))
+						.mapToObj(i -> tagRepository.save(CatalogueTags.seed("five-" + i, null, TagCategory.OTHER)))
 						.map(com.rb.multi.agent.entity.Tag::getId)
 						.toList();
 		MvcResult created =
@@ -454,12 +455,12 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		User doctorB = userRepository.save(User.seedClinician("doc-acc-b"));
 		List<UUID> idsA =
 				IntStream.range(0, 5)
-						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("acca-" + i, null, TagCategory.SLEEP)))
+						.mapToObj(i -> tagRepository.save(CatalogueTags.seed("acca-" + i, null, TagCategory.SLEEP)))
 						.map(com.rb.multi.agent.entity.Tag::getId)
 						.toList();
 		List<UUID> idsB =
 				IntStream.range(0, 5)
-						.mapToObj(i -> tagRepository.save(new com.rb.multi.agent.entity.Tag("accb-" + i, null, TagCategory.OTHER)))
+						.mapToObj(i -> tagRepository.save(CatalogueTags.seed("accb-" + i, null, TagCategory.OTHER)))
 						.map(com.rb.multi.agent.entity.Tag::getId)
 						.toList();
 		MvcResult created =
@@ -491,7 +492,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assign_twoCliniciansSameCatalogueTag_patientSeesOneDistinctTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("shared-by-two", null, TagCategory.SLEEP));
+		var shared = tagRepository.save(CatalogueTags.seed("shared-by-two", null, TagCategory.SLEEP));
 		User doctorA = userRepository.save(User.seedClinician("doc-share-a"));
 		User doctorB = userRepository.save(User.seedClinician("doc-share-b"));
 		MvcResult created =
@@ -525,7 +526,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void delete_oneClinicianAssignment_secondKeepsSharedTag_patientStillSeesTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var shared = tagRepository.save(new com.rb.multi.agent.entity.Tag("slice-shared", null, TagCategory.SLEEP));
+		var shared = tagRepository.save(CatalogueTags.seed("slice-shared", null, TagCategory.SLEEP));
 		User doctorA = userRepository.save(User.seedClinician("doc-slc-a"));
 		User doctorB = userRepository.save(User.seedClinician("doc-slc-b"));
 		MvcResult created =
@@ -565,7 +566,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void assign_edge_unknownAssigningDoctor_returns404() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var tag = tagRepository.save(new com.rb.multi.agent.entity.Tag("needs-valid-doc-h", null, TagCategory.SLEEP));
+		var tag = tagRepository.save(CatalogueTags.seed("needs-valid-doc-h", null, TagCategory.SLEEP));
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("bd-unk-doctor", false))))
 						.andExpect(status().isCreated())
@@ -588,7 +589,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
 		User doctor = userRepository.save(User.seedClinician("doc-del-miss"));
-		var tag = tagRepository.save(new com.rb.multi.agent.entity.Tag("miss-del", null, TagCategory.SLEEP));
+		var tag = tagRepository.save(CatalogueTags.seed("miss-del", null, TagCategory.SLEEP));
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(userCreatePayload("del-miss-u", false))))
 						.andExpect(status().isCreated())
@@ -610,8 +611,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void update_profileLeavesTagsUntouched() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		var tagB = tagRepository.save(new com.rb.multi.agent.entity.Tag("reorder-beta-h", null, TagCategory.OTHER));
-		var tagA = tagRepository.save(new com.rb.multi.agent.entity.Tag("reorder-alpha-h", null, TagCategory.OTHER));
+		var tagB = tagRepository.save(CatalogueTags.seed("reorder-beta-h", null, TagCategory.OTHER));
+		var tagA = tagRepository.save(CatalogueTags.seed("reorder-alpha-h", null, TagCategory.OTHER));
 		User doctor = userRepository.save(User.seedClinician("doc-reorder-h"));
 		UserCreateRequest patient = userCreatePayload("bd-reorder-ts", false);
 		MvcResult created =
@@ -909,7 +910,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	void selfAssign_patient_addsTag() throws Exception {
 		userRepository.deleteAll();
 		tagRepository.deleteAll();
-		Tag catalogue = tagRepository.save(new Tag("self-pick-one", null, TagCategory.OTHER));
+		Tag catalogue = tagRepository.save(CatalogueTags.seed("self-pick-one", null, TagCategory.OTHER));
 		UserCreateRequest patient = userCreatePayload("self-tag-p", false);
 		MvcResult created =
 				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
@@ -964,7 +965,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		tagRepository.deleteAll();
 		List<Tag> tags =
 				IntStream.range(0, 6)
-						.mapToObj(i -> tagRepository.save(new Tag("self-max-" + i, null, TagCategory.OTHER)))
+						.mapToObj(i -> tagRepository.save(CatalogueTags.seed("self-max-" + i, null, TagCategory.OTHER)))
 						.toList();
 		UserCreateRequest patient = userCreatePayload("self-tag-max", false);
 		MvcResult created =

@@ -20,12 +20,14 @@ import com.rb.multi.agent.dto.ApiErrorResponse;
 import com.rb.multi.agent.dto.ApiProblemCode;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
+import com.rb.multi.agent.exception.DuplicateTagCodeException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.DuplicateUserEmailException;
 import com.rb.multi.agent.exception.PatientSelfTagSliceFullException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
+import com.rb.multi.agent.exception.TagCodeMismatchException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.exception.DoctorPatientLinkNotFoundException;
 import com.rb.multi.agent.exception.NotDoctorProfileException;
@@ -170,6 +172,28 @@ public class ApiExceptionHandler {
 				HttpStatus.CONFLICT,
 				ApiProblemCode.TAG_NAME_CONFLICT,
 				msg("error.tag.duplicateName", ex.getName()),
+				null);
+	}
+
+	/** EN: Catalogue tag code already registered. PT-BR: Código de etiqueta já registado. */
+	@ExceptionHandler(DuplicateTagCodeException.class)
+	public ResponseEntity<ApiErrorResponse> duplicateTagCode(DuplicateTagCodeException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.CONFLICT,
+				ApiProblemCode.TAG_CODE_CONFLICT,
+				msg("error.tag.duplicateCode", ex.getCode()),
+				null);
+	}
+
+	/** EN: PUT body tried to change immutable tag code. PT-BR: Payload tentou alterar o código imutável da etiqueta. */
+	@ExceptionHandler(TagCodeMismatchException.class)
+	public ResponseEntity<ApiErrorResponse> tagCodeMismatch(TagCodeMismatchException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.INVALID_ARGUMENT,
+				msg("error.tag.codeMismatch", ex.getExpectedCode(), ex.getActualCode()),
 				null);
 	}
 

@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.constants.TagCategory;
@@ -19,5 +21,8 @@ public interface TagRepository extends JpaRepository<Tag, UUID> {
 
 	boolean existsByNameIgnoreCase(String name);
 
-	List<Tag> findAllByCategory(TagCategory category);
+	boolean existsByCode(String code);
+
+	@Query("SELECT DISTINCT t FROM Tag t JOIN t.categories c WHERE c = :category")
+	List<Tag> findAllByCategory(@Param("category") TagCategory category);
 }

@@ -3,6 +3,7 @@ package com.rb.multi.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
+import com.rb.multi.agent.support.CatalogueTags;
 
 /**
  * EN: {@link TagService} catalogue rules and retrieval edge coverage.
@@ -51,8 +53,8 @@ class TagServiceIntTest {
 	@Test
 	@DisplayName("findAll(null) vs filtro por categoria")
 	void findAll_respectsNullableCategoryPredicate() {
-		tagRepository.save(new Tag("wake", null, TagCategory.SLEEP));
-		tagRepository.save(new Tag("worry", null, TagCategory.ANXIETY));
+		tagRepository.save(CatalogueTags.seed("wake", null, TagCategory.SLEEP));
+		tagRepository.save(CatalogueTags.seed("worry", null, TagCategory.ANXIETY));
 
 		assertThat(tagService.findAll(null)).hasSize(2);
 		assertThat(tagService.findAll(TagCategory.SLEEP)).extracting(Tag::getName).containsExactly("wake");
@@ -67,7 +69,7 @@ class TagServiceIntTest {
 	@Test
 	@DisplayName("findByName ignorando caixa quando existente")
 	void findByNameIgnoreCase_trimmedNormalization() {
-		tagRepository.save(new Tag("CamelCaseSeed", null, TagCategory.SLEEP));
+		tagRepository.save(CatalogueTags.seed("CamelCaseSeed", null, TagCategory.SLEEP));
 
 		var found = tagService.findByNameIgnoreCase("  camelCASEseed ").orElseThrow();
 		assertThat(found.getName()).isEqualTo("CamelCaseSeed");
@@ -85,7 +87,12 @@ class TagServiceIntTest {
 	@DisplayName("create normaliza espaços extras e collapse descrição em branco a null persistido")
 	void create_trimNameAndCollapseBlankDescriptions() {
 		var persisted =
-				tagService.create(new TagWriteRequest(" spaced-name ", "     ", TagCategory.LOW_MOOD));
+				tagService.create(
+						new TagWriteRequest(
+								"SPACED_NAME",
+								" spaced-name ",
+								"     ",
+								List.of(TagCategory.LOW_MOOD)));
 		tagRepository.flush();
 		entityManager.clear();
 
@@ -97,7 +104,9 @@ class TagServiceIntTest {
 	@Test
 	@DisplayName("nome apenas brancos após strip → IllegalArgumentException")
 	void create_blankName_throwsIllegalArgument() {
-		assertThatThrownBy(() -> tagService.create(new TagWriteRequest("\t\r\n ", null, TagCategory.OTHER))).isInstanceOf(
+		assertThatThrownBy(
+				() -> tagService.create(
+						new TagWriteRequest("X", "\t\r\n ", null, List.of(TagCategory.OTHER)))).isInstanceOf(
 				IllegalArgumentException.class);
 	}
 
@@ -107,37 +116,43 @@ class TagServiceIntTest {
 		assertThatThrownBy(
 				() -> tagService.create(
 						new TagWriteRequest(
+								"LONG",
 								"a".repeat(51),
 								null,
-								TagCategory.SLEEP))).isInstanceOf(IllegalArgumentException.class);
+								List.of(TagCategory.SLEEP)))).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
-	@DisplayName("categoria obrigatória no update → NullPointerException")
-	void update_whenCategoryMissing_throwsNpeViaRequireNonNull() {
-		var surrogate = tagRepository.save(new Tag("needs-category", null, TagCategory.SLEEP)).getId();
-		assertThatThrownBy(() -> tagService.update(surrogate, new TagWriteRequest("rename", null, null))).isInstanceOf(
-				NullPointerException.class);
+	@DisplayName("categorias vazias no update → IllegalArgumentException")
+	void update_whenCategoriesEmpty_throwsIllegalArgument() {
+		var surrogate = tagRepository.save(CatalogueTags.seed("needs-category", null, TagCategory.SLEEP)).getId();
+		assertThatThrownBy(
+				() -> tagService.update(surrogate, new TagWriteRequest("NEEDS_CATEGORY", "rename", null, List.of())))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	@DisplayName("duplicação global insensível a maiúsculas tanto no insert como no update contra terceiros")
 	void duplicateInsensitiveName_conflictOnCreateAndUpdateAgainstOtherRows() {
-		tagRepository.save(new Tag("Primary", null, TagCategory.SLEEP));
+		tagRepository.save(CatalogueTags.seed("Primary", null, TagCategory.SLEEP));
 
-		assertThatThrownBy(() -> tagService.create(new TagWriteRequest("primary", null, TagCategory.SLEEP))).isInstanceOfSatisfying(
+		assertThatThrownBy(
+				() -> tagService.create(
+						new TagWriteRequest(
+								"DUPLICATE_NAME", "primary", null, List.of(TagCategory.SLEEP)))).isInstanceOfSatisfying(
 				DuplicateTagNameException.class,
 				ex -> assertThat(ex.getName()).isEqualTo("primary"));
 
-		var survivor = tagRepository.save(new Tag("Survivor", null, TagCategory.SLEEP));
+		var survivor = tagRepository.save(CatalogueTags.seed("Survivor", null, TagCategory.SLEEP));
 
 		assertThatThrownBy(
 				() -> tagService.update(
 						survivor.getId(),
 						new TagWriteRequest(
+								"SURVIVOR",
 								"PRIMARY",
 								null,
-								TagCategory.SLEEP))).isInstanceOf(DuplicateTagNameException.class);
+								List.of(TagCategory.SLEEP)))).isInstanceOf(DuplicateTagNameException.class);
 	}
 
 	@Test
@@ -152,6 +167,7 @@ class TagServiceIntTest {
 		assertThatThrownBy(
 				() -> tagService.update(
 						UUID.randomUUID(),
-						new TagWriteRequest("ghost", null, TagCategory.SLEEP))).isInstanceOf(TagNotFoundException.class);
+						new TagWriteRequest("GHOST", "ghost", null, List.of(TagCategory.SLEEP)))).isInstanceOf(
+				TagNotFoundException.class);
 	}
 }

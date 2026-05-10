@@ -1,0 +1,130 @@
+-- MindSignal catalogue: baseline tags with multi-category membership (idempotent on code / pairs).
+INSERT INTO tags (id, code, name, description, created_at)
+SELECT gen_random_uuid(), x.code, x.name, NULL, NOW()
+FROM (VALUES
+-- Anxiety + related
+('GENERALIZED_WORRY', 'generalized-worry'),
+('PANIC_OR_SURGES', 'panic-or-surges'),
+('SOCIAL_ANXIETY', 'social-anxiety'),
+('PERFORMANCE_OR_EVAL', 'performance-or-eval'),
+('RUMINATION', 'rumination'),
+('HYPERVIGILANCE', 'hypervigilance'),
+-- Distress / despair
+('OVERWHELM_CRASH', 'overwhelm-crash'),
+('HOPELESSNESS', 'hopelessness'),
+('INTENSE_EMPTINESS', 'intense-emptiness'),
+('GRIEF_OR_LOSS', 'grief-or-loss'),
+('SHAME_OR_GUILT', 'shame-or-guilt'),
+-- Low mood
+('PERSISTENT_SADNESS', 'persistent-sadness'),
+('ANHEDONIA', 'anhedonia'),
+('FATIGUE_MOOD', 'fatigue-mood'),
+('IRRITABILITY', 'irritability'),
+('MOTIVATION_DROP', 'motivation-drop'),
+-- Safety (informational wording per SRS)
+('PASSIVE_DEATH_WISH', 'passive-death-wish'),
+('ACTIVE_SUICIDAL_THOUGHTS', 'active-suicidal-thoughts'),
+('SELF_HARM_URGES', 'self-harm-urges'),
+('PLAN_OR_MEANS_CONCERNS', 'plan-or-means-concerns'),
+-- Somatic cardiovascular
+('CHEST_TIGHTNESS', 'chest-tightness'),
+('PALPITATIONS', 'palpitations'),
+('BREATHING_DIFFICULTY', 'breathing-difficulty'),
+('DIZZINESS_NEAR_SYNCOPE', 'dizziness-near-syncope'),
+-- Somatic non-cardiac
+('MUSCULAR_TENSION_PAIN', 'muscular-tension-pain'),
+('GASTRO_INTESTINAL_UPSET', 'gastro-intestinal-upset'),
+('NON_CARDIAC_DIZZINESS', 'non-cardiac-dizziness'),
+-- Sleep
+('INSOMNIA_ONSET', 'insomnia-onset'),
+('INSOMNIA_AWAKENINGS', 'insomnia-awakenings'),
+('EARLY_AWAKENING', 'early-awakening'),
+('POOR_SLEEP_QUALITY', 'poor-sleep-quality'),
+('IRREGULAR_SLEEP_SCHEDULE', 'irregular-sleep-schedule'),
+('DAYTIME_SLEEPINESS', 'daytime-sleepiness'),
+-- Stress & adjustment
+('PERCEIVED_HIGH_STRESS', 'perceived-high-stress'),
+('LIFE_ADJUSTMENT_CHANGE', 'life-adjustment-change'),
+('WORK_OR_STUDY_OVERLOAD', 'work-or-study-overload'),
+-- Trauma & stressor-related (non-diagnostic labels)
+('RE_EXPERIENCING_INTRUSIONS', 're-experiencing-intrusions'),
+('AVOIDANCE_BEHAVIOUR', 'avoidance-behaviour'),
+('EMOTIONAL_NUMBING', 'emotional-numbing'),
+-- Substance (informational)
+('ALCOHOL_CONCERN', 'alcohol-concern'),
+('SUBSTANCE_CRAVING_OR_USE', 'substance-craving-or-use'),
+-- Other
+('DIFFICULT_TO_CLASSIFY', 'difficult-to-classify')
+) AS x(code, name)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO tag_categories (tag_id, category)
+SELECT t.id, v.cat::varchar(50)
+FROM tags t
+JOIN (VALUES
+('GENERALIZED_WORRY', 'ANXIETY'),
+('GENERALIZED_WORRY', 'STRESS_AND_ADJUSTMENT'),
+('PANIC_OR_SURGES', 'ANXIETY'),
+('PANIC_OR_SURGES', 'SOMATIC_CARDIOVASCULAR'),
+('SOCIAL_ANXIETY', 'ANXIETY'),
+('PERFORMANCE_OR_EVAL', 'ANXIETY'),
+('PERFORMANCE_OR_EVAL', 'STRESS_AND_ADJUSTMENT'),
+('RUMINATION', 'ANXIETY'),
+('RUMINATION', 'LOW_MOOD'),
+('HYPERVIGILANCE', 'ANXIETY'),
+('HYPERVIGILANCE', 'TRAUMA_AND_STRESSOR_RELATED'),
+('OVERWHELM_CRASH', 'DISTRESS_AND_DESPAIR'),
+('OVERWHELM_CRASH', 'STRESS_AND_ADJUSTMENT'),
+('HOPELESSNESS', 'DISTRESS_AND_DESPAIR'),
+('HOPELESSNESS', 'LOW_MOOD'),
+('INTENSE_EMPTINESS', 'DISTRESS_AND_DESPAIR'),
+('INTENSE_EMPTINESS', 'LOW_MOOD'),
+('GRIEF_OR_LOSS', 'DISTRESS_AND_DESPAIR'),
+('GRIEF_OR_LOSS', 'TRAUMA_AND_STRESSOR_RELATED'),
+('SHAME_OR_GUILT', 'DISTRESS_AND_DESPAIR'),
+('SHAME_OR_GUILT', 'LOW_MOOD'),
+('PERSISTENT_SADNESS', 'LOW_MOOD'),
+('ANHEDONIA', 'LOW_MOOD'),
+('FATIGUE_MOOD', 'LOW_MOOD'),
+('FATIGUE_MOOD', 'SLEEP'),
+('IRRITABILITY', 'LOW_MOOD'),
+('IRRITABILITY', 'STRESS_AND_ADJUSTMENT'),
+('MOTIVATION_DROP', 'LOW_MOOD'),
+('MOTIVATION_DROP', 'STRESS_AND_ADJUSTMENT'),
+('PASSIVE_DEATH_WISH', 'SUICIDE_AND_SELF_HARM_IDEATION'),
+('PASSIVE_DEATH_WISH', 'DISTRESS_AND_DESPAIR'),
+('ACTIVE_SUICIDAL_THOUGHTS', 'SUICIDE_AND_SELF_HARM_IDEATION'),
+('SELF_HARM_URGES', 'SUICIDE_AND_SELF_HARM_IDEATION'),
+('PLAN_OR_MEANS_CONCERNS', 'SUICIDE_AND_SELF_HARM_IDEATION'),
+('CHEST_TIGHTNESS', 'SOMATIC_CARDIOVASCULAR'),
+('PALPITATIONS', 'SOMATIC_CARDIOVASCULAR'),
+('BREATHING_DIFFICULTY', 'SOMATIC_CARDIOVASCULAR'),
+('BREATHING_DIFFICULTY', 'ANXIETY'),
+('DIZZINESS_NEAR_SYNCOPE', 'SOMATIC_CARDIOVASCULAR'),
+('MUSCULAR_TENSION_PAIN', 'SOMATIC_NON_CARDIAC'),
+('GASTRO_INTESTINAL_UPSET', 'SOMATIC_NON_CARDIAC'),
+('NON_CARDIAC_DIZZINESS', 'SOMATIC_NON_CARDIAC'),
+('INSOMNIA_ONSET', 'SLEEP'),
+('INSOMNIA_AWAKENINGS', 'SLEEP'),
+('EARLY_AWAKENING', 'SLEEP'),
+('POOR_SLEEP_QUALITY', 'SLEEP'),
+('IRREGULAR_SLEEP_SCHEDULE', 'SLEEP'),
+('IRREGULAR_SLEEP_SCHEDULE', 'STRESS_AND_ADJUSTMENT'),
+('DAYTIME_SLEEPINESS', 'SLEEP'),
+('PERCEIVED_HIGH_STRESS', 'STRESS_AND_ADJUSTMENT'),
+('PERCEIVED_HIGH_STRESS', 'ANXIETY'),
+('LIFE_ADJUSTMENT_CHANGE', 'STRESS_AND_ADJUSTMENT'),
+('WORK_OR_STUDY_OVERLOAD', 'STRESS_AND_ADJUSTMENT'),
+('RE_EXPERIENCING_INTRUSIONS', 'TRAUMA_AND_STRESSOR_RELATED'),
+('RE_EXPERIENCING_INTRUSIONS', 'ANXIETY'),
+('AVOIDANCE_BEHAVIOUR', 'TRAUMA_AND_STRESSOR_RELATED'),
+('AVOIDANCE_BEHAVIOUR', 'ANXIETY'),
+('EMOTIONAL_NUMBING', 'TRAUMA_AND_STRESSOR_RELATED'),
+('EMOTIONAL_NUMBING', 'LOW_MOOD'),
+('ALCOHOL_CONCERN', 'SUBSTANCE_USE'),
+('SUBSTANCE_CRAVING_OR_USE', 'SUBSTANCE_USE'),
+('DIFFICULT_TO_CLASSIFY', 'OTHER')
+) AS v(code, cat) ON t.code = v.code
+WHERE NOT EXISTS (
+    SELECT 1 FROM tag_categories x WHERE x.tag_id = t.id AND x.category = v.cat
+);

@@ -1,5 +1,6 @@
 package com.rb.multi.agent.service;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -11,7 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.rb.multi.agent.dto.TagWriteRequest;
 import com.rb.multi.agent.entity.Tag;
 import com.rb.multi.agent.constants.TagCategory;
+import com.rb.multi.agent.exception.DuplicateTagCodeException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
+import com.rb.multi.agent.exception.TagCodeMismatchException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;
 
@@ -52,22 +55,30 @@ public class TagService {
 		return tagRepository.findByNameIgnoreCase(normalizeName(name));
 	}
 
-	/** EN: Persist new catalogue entry after duplicate check. PT-BR: Persiste entrada nova após verificação de duplicado. */
+	/** EN: Persist new catalogue entry after duplicate checks. PT-BR: Persiste entrada nova após verificação de duplicados. */
 	@Transactional
 	public Tag create(TagWriteRequest request) {
+		String code = Tag.normalizeCatalogCode(request.code());
+		if (tagRepository.existsByCode(code)) {
+			throw new DuplicateTagCodeException(code);
+		}
 		String name = normalizeName(request.name());
 		if (tagRepository.existsByNameIgnoreCase(name)) {
 			throw new DuplicateTagNameException(name);
 		}
-		Objects.requireNonNull(request.category(), "category");
-		Tag tag = new Tag(name, trimToNull(request.description()), request.category());
+		Tag tag = new Tag(code, name, trimToNull(request.description()), new HashSet<>(request.categories()));
 		return tagRepository.save(tag);
 	}
 
-	/** EN: Applies write model while guarding global name uniqueness. PT-BR: Aplica modelo de escrita garantindo unicidade global do nome. */
+	/** EN: Applies write model while guarding unique code (immutable) and global name uniqueness. PT-BR: Atualiza sem mudar code. */
 	@Transactional
 	public Tag update(UUID id, TagWriteRequest request) {
 		Tag entity = tagRepository.findById(id).orElseThrow(() -> TagNotFoundException.byId(id));
+
+		String code = Tag.normalizeCatalogCode(request.code());
+		if (!code.equals(entity.getCode())) {
+			throw new TagCodeMismatchException(entity.getCode(), code);
+		}
 
 		String name = normalizeName(request.name());
 		tagRepository.findByNameIgnoreCase(name)
@@ -78,7 +89,7 @@ public class TagService {
 
 		entity.setName(name);
 		entity.setDescription(trimToNull(request.description()));
-		entity.setCategory(Objects.requireNonNull(request.category(), "category"));
+		entity.setCategories(new HashSet<>(request.categories()));
 		return tagRepository.save(entity);
 	}
 
@@ -91,7 +102,7 @@ public class TagService {
 		tagRepository.deleteById(id);
 	}
 
-	/** EN: Trims/strips enforced length-bound tag identifier. PT-BR: Normaliza nome com strip e limite de tamanho aplicado no domínio. */
+	/** EN: Trims/strips enforced length-bound tag display name. PT-BR: Normaliza nome com strip e limite de tamanho. */
 	private static String normalizeName(String name) {
 		String stripped = Objects.requireNonNull(name, "name").strip();
 		if (stripped.isEmpty()) {

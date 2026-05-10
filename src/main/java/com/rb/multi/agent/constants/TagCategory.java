@@ -3,8 +3,8 @@ package com.rb.multi.agent.constants;
 /**
  * <p><b>EN:</b> Groups catalogue tags for API filtering/search only (not a clinical classification).</p>
  * <p><b>PT-BR:</b> Agrupa tags do catálogo apenas para filtros/pesquisa na API (não é classificação clínica).</p>
- * <p><b>EN:</b> Concrete labels live in {@link com.rb.multi.agent.entity.Tag#getName()}; categories narrow result sets.</p>
- * <p><b>PT-BR:</b> Rótulos concretos estão em {@link com.rb.multi.agent.entity.Tag#getName()}; categorias reduzem o conjunto de resultados.</p>
+ * <p><b>EN:</b> Concrete labels live on each {@link com.rb.multi.agent.entity.Tag}; a tag may appear in several categories.</p>
+ * <p><b>PT-BR:</b> Rótulos vivem em cada {@link com.rb.multi.agent.entity.Tag}; uma etiqueta pode ter várias categorias.</p>
  */
 public enum TagCategory {
 
@@ -38,6 +38,26 @@ public enum TagCategory {
 	 * <p><b>PT-BR:</b> Rotina sono/descanso modelada como etiquetas.</p>
 	 */
 	SLEEP,
+	/**
+	 * <p><b>EN:</b> Perceived stress, overload, and life transitions (adjustment).</p>
+	 * <p><b>PT-BR:</b> Stress percebido, sobrecarga e transições de vida (ajuste).</p>
+	 */
+	STRESS_AND_ADJUSTMENT,
+	/**
+	 * <p><b>EN:</b> Trauma- or major-stressor-related wording (SRS; not diagnostic).</p>
+	 * <p><b>PT-BR:</b> Relacionado com trauma ou grandes stressores (SRS; não diagnóstico).</p>
+	 */
+	TRAUMA_AND_STRESSOR_RELATED,
+	/**
+	 * <p><b>EN:</b> Non-cardiac somatic complaints (patient-reported; no diagnosis).</p>
+	 * <p><b>PT-BR:</b> Queixas somáticas não cardíacas (autorrelato; sem diagnóstico).</p>
+	 */
+	SOMATIC_NON_CARDIAC,
+	/**
+	 * <p><b>EN:</b> Substance use / craving concerns (informational only).</p>
+	 * <p><b>PT-BR:</b> Uso de substâncias / cravings (apenas informativo).</p>
+	 */
+	SUBSTANCE_USE,
 	/**
 	 * <p><b>EN:</b> Items not belonging to another axis.</p>
 	 * <p><b>PT-BR:</b> Etiquetas que não se encaixam nos outros eixos.</p>

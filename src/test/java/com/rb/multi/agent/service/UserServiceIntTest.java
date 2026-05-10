@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.Tag;
+import com.rb.multi.agent.support.CatalogueTags;
 import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
@@ -94,9 +95,9 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("Fluxo: clínico atribui e remove etiquetas; leitura expõe apenas subconjunto do catálogo")
 	void clinicianAssignsAndRemoves_subsetOnly() {
-		var inCatalogUnused = tagRepository.save(new Tag("zzz-unused", null, TagCategory.OTHER));
-		var tB = tagRepository.save(new Tag("released-b", null, TagCategory.SLEEP));
-		var tA = tagRepository.save(new Tag("released-a", null, TagCategory.SLEEP));
+		var inCatalogUnused = tagRepository.save(CatalogueTags.seed("zzz-unused", null, TagCategory.OTHER));
+		var tB = tagRepository.save(CatalogueTags.seed("released-b", null, TagCategory.SLEEP));
+		var tA = tagRepository.save(CatalogueTags.seed("released-a", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-pac901"));
 
 		var savedPatient = userService.create(createBase("pac-901", false));
@@ -118,7 +119,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("flag doctor apenas no perfil; tags mantêm-se quando perfil atualiza doctor")
 	void doctorFlag_toggleOnProfileKeepsAssignments() {
-		var tagged = tagRepository.save(new Tag("role-proof", null, TagCategory.SLEEP));
+		var tagged = tagRepository.save(CatalogueTags.seed("role-proof", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-role-proof"));
 		var u = userService.create(createBase("patient-role", false));
 
@@ -131,7 +132,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("remover todas as etiquetas desse médico deixa paciente sem tags desse médico")
 	void removeAllTagsForDoctor_clearsSlice() {
-		var t = tagRepository.save(new Tag("solo", null, TagCategory.SLEEP));
+		var t = tagRepository.save(CatalogueTags.seed("solo", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-clear"));
 
 		var u = userService.create(createBase("p-clear", false));
@@ -145,8 +146,8 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("médico A remove etiqueta só sua; B mantém as suas")
 	void removeOneClinicianSlice_preservesPeers() {
-		var tagAonly = tagRepository.save(new Tag("solo-a-own", null, TagCategory.SLEEP));
-		var tagBonly = tagRepository.save(new Tag("solo-b-own", null, TagCategory.SLEEP));
+		var tagAonly = tagRepository.save(CatalogueTags.seed("solo-a-own", null, TagCategory.SLEEP));
+		var tagBonly = tagRepository.save(CatalogueTags.seed("solo-b-own", null, TagCategory.SLEEP));
 		var docA = userRepository.save(User.seedClinician("doc-a-slice"));
 		var docB = userRepository.save(User.seedClinician("doc-b-slice"));
 
@@ -165,7 +166,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("atribuir duas vezes a mesma tag é idempotente")
 	void assign_sameTagTwice_idempotent() {
-		var tA = tagRepository.save(new Tag("dup-a", null, TagCategory.OTHER));
+		var tA = tagRepository.save(CatalogueTags.seed("dup-a", null, TagCategory.OTHER));
 		var doc = userRepository.save(User.seedClinician("doc-dup"));
 
 		var u = userService.create(createBase("p-dup", false));
@@ -180,8 +181,8 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("assignedByDoctorId resolve paciente sem perfil médico ⇒ AssigningActorNotDoctorException")
 	void assign_actorNotDoctor_throws() {
-		var tagged = tagRepository.save(new Tag("need-real-doc", null, TagCategory.OTHER));
-		var extraForFaker = tagRepository.save(new Tag("faker-cant-act", null, TagCategory.SLEEP));
+		var tagged = tagRepository.save(CatalogueTags.seed("need-real-doc", null, TagCategory.OTHER));
+		var extraForFaker = tagRepository.save(CatalogueTags.seed("faker-cant-act", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-real"));
 		var faker = userRepository.save(User.seedPatient("fake-doc"));
 		var patient = userService.create(createBase("p-actor", false));
@@ -194,7 +195,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("conta com isDoctor=true no alvo: pode receber tag de catálogo (paciente sempre; médico é extra)")
 	void assign_targetWithDoctorFlag_succeeds() {
-		var tagged = tagRepository.save(new Tag("clin-has-tags-too", null, TagCategory.OTHER));
+		var tagged = tagRepository.save(CatalogueTags.seed("clin-has-tags-too", null, TagCategory.OTHER));
 		var doc = userRepository.save(User.seedClinician("doc-target"));
 		var clinicianUser = userService.create(createBase("clin-a", true));
 		userService.assignCatalogueTag(clinicianUser.getId(), doc.getId(), tagged.getId());
@@ -206,8 +207,8 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("substituição: nova tag adicionada e antiga removida manualmente")
 	void assignThenRemoveOld() {
-		var tKeep = tagRepository.save(new Tag("keep-me", null, TagCategory.SLEEP));
-		var old = tagRepository.save(new Tag("discard-me", null, TagCategory.SLEEP));
+		var tKeep = tagRepository.save(CatalogueTags.seed("keep-me", null, TagCategory.SLEEP));
+		var old = tagRepository.save(CatalogueTags.seed("discard-me", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-sub"));
 
 		var u = userService.create(createBase("p-sub", false));
@@ -397,7 +398,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("update de perfil mantém tags existentes")
 	void update_profileOnly_preservesTags() {
-		var ta = tagRepository.save(new Tag("stable-left", null, TagCategory.SLEEP));
+		var ta = tagRepository.save(CatalogueTags.seed("stable-left", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-stable"));
 
 		var u = userService.create(createBase("stable-u", false));
@@ -412,7 +413,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("delete existe remove o agregado; delete id fantasma lança UserNotFoundException")
 	void delete_edgeCases() {
-		var catalogueRow = tagRepository.save(new Tag("alive", null, TagCategory.SLEEP));
+		var catalogueRow = tagRepository.save(CatalogueTags.seed("alive", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-alive"));
 
 		var u = userService.create(createBase("alive-code", false));
@@ -428,7 +429,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("findAll inclui tags hidratadas")
 	void findAll_includesAssociationsWithTags() {
-		var t = tagRepository.save(new Tag("bulk", null, TagCategory.SLEEP));
+		var t = tagRepository.save(CatalogueTags.seed("bulk", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-bulk"));
 
 		var u1 = userService.create(createBase("l1", false));
@@ -442,7 +443,7 @@ class UserServiceIntTest {
 	private List<Tag> saveTags(String prefix, int count, TagCategory category) {
 		List<Tag> out = new ArrayList<>();
 		for (int i = 0; i < count; i++) {
-			out.add(tagRepository.save(new Tag(prefix + "-" + i, null, category)));
+			out.add(tagRepository.save(CatalogueTags.seed(prefix + "-" + i, null, category)));
 		}
 		return out;
 	}
@@ -450,7 +451,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("borda: assignedByDoctorId inexistente ⇒ AssigningDoctorNotFoundException")
 	void edge_assigningDoctorUnknown_throws() {
-		var t = tagRepository.save(new Tag("edge-ghost-doc", null, TagCategory.OTHER));
+		var t = tagRepository.save(CatalogueTags.seed("edge-ghost-doc", null, TagCategory.OTHER));
 		var doc = userRepository.save(User.seedClinician("doc-edge-ghost"));
 		var p = userService.create(createBase("p-ghost-assigner", false));
 		userService.assignCatalogueTag(p.getId(), doc.getId(), t.getId());
@@ -495,7 +496,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("dois médicos: mesma tag ⇒ duas atribuições; paciente vê uma entrada distinta")
 	void sharedCatalogueTag_twoAssignments_oneDistinctTagRead() {
-		var shared = tagRepository.save(new Tag("peer-shared-one", null, TagCategory.SLEEP));
+		var shared = tagRepository.save(CatalogueTags.seed("peer-shared-one", null, TagCategory.SLEEP));
 		var docFirst = userRepository.save(User.seedClinician("doc-peer-1st"));
 		var docSecond = userRepository.save(User.seedClinician("doc-peer-2nd"));
 		var patient = userService.create(createBase("p-peer-share", false));
@@ -524,7 +525,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("remove inexistente ⇒ PatientTagAssignmentNotFoundException")
 	void remove_unknownTriplet_throws() {
-		var shared = tagRepository.save(new Tag("gone", null, TagCategory.SLEEP));
+		var shared = tagRepository.save(CatalogueTags.seed("gone", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-miss-rem"));
 		var patient = userService.create(createBase("p-miss-rem", false));
 		assertThatThrownBy(() -> userService.removeCatalogueTag(patient.getId(), doc.getId(), shared.getId()))
@@ -534,7 +535,7 @@ class UserServiceIntTest {
 	@Test
 	@DisplayName("getTags lista ids únicos na leitura")
 	void edge_findById_returnsUniqueTagIdsReadable() {
-		var lone = tagRepository.save(new Tag("edge-unique-names", null, TagCategory.SLEEP));
+		var lone = tagRepository.save(CatalogueTags.seed("edge-unique-names", null, TagCategory.SLEEP));
 		var doc = userRepository.save(User.seedClinician("doc-uniq-read"));
 		var patient = userService.create(createBase("p-uniq-read", false));
 		userService.assignCatalogueTag(patient.getId(), doc.getId(), lone.getId());

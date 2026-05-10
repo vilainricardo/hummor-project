@@ -20,6 +20,7 @@ import com.rb.multi.agent.dto.TagResponse;
 import com.rb.multi.agent.dto.TagWriteRequest;
 import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.exception.TagNotFoundException;
+import com.rb.multi.agent.service.TagCatalogPresenter;
 import com.rb.multi.agent.service.TagService;
 
 import jakarta.validation.Valid;
@@ -33,9 +34,11 @@ import jakarta.validation.Valid;
 public class TagController {
 
 	private final TagService tagService;
+	private final TagCatalogPresenter tagCatalogPresenter;
 
-	public TagController(TagService tagService) {
+	public TagController(TagService tagService, TagCatalogPresenter tagCatalogPresenter) {
 		this.tagService = tagService;
+		this.tagCatalogPresenter = tagCatalogPresenter;
 	}
 
 	/**
@@ -44,20 +47,20 @@ public class TagController {
 	 */
 	@GetMapping
 	public List<TagResponse> list(@RequestParam(required = false) TagCategory category) {
-		return tagService.findAll(category).stream().map(TagResponse::from).toList();
+		return tagService.findAll(category).stream().map(tagCatalogPresenter::present).toList();
 	}
 
 	/** EN: Loads tag primary key. PT-BR: Obtém etiqueta pela chave (UUID). */
 	@GetMapping("/{id}")
 	public TagResponse getById(@PathVariable UUID id) {
-		return tagService.findById(id).map(TagResponse::from).orElseThrow(() -> TagNotFoundException.byId(id));
+		return tagService.findById(id).map(tagCatalogPresenter::present).orElseThrow(() -> TagNotFoundException.byId(id));
 	}
 
 	/** EN: Resolves immutable tag slug by canonical name. PT-BR: Resolve etiqueta pelo nome canónico (case-insensitive). */
 	@GetMapping("/by-name/{name}")
 	public TagResponse getByName(@PathVariable String name) {
 		return tagService.findByNameIgnoreCase(name)
-				.map(TagResponse::from)
+				.map(tagCatalogPresenter::present)
 				.orElseThrow(() -> TagNotFoundException.byName(name));
 	}
 
@@ -69,13 +72,13 @@ public class TagController {
 				.path("/{id}")
 				.buildAndExpand(saved.getId())
 				.toUri();
-		return ResponseEntity.created(location).body(TagResponse.from(saved));
+		return ResponseEntity.created(location).body(tagCatalogPresenter.present(saved));
 	}
 
 	/** EN: Idempotent replace of editable fields. PT-BR: Substituição idempotente dos campos editáveis. */
 	@PutMapping("/{id}")
 	public TagResponse update(@PathVariable UUID id, @Valid @RequestBody TagWriteRequest request) {
-		return TagResponse.from(tagService.update(id, request));
+		return tagCatalogPresenter.present(tagService.update(id, request));
 	}
 
 	/** EN: Hard delete catalogue row when present. PT-BR: Elimina linha do catálogo quando existente. */
