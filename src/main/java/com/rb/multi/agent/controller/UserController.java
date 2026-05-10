@@ -170,7 +170,8 @@ public class UserController {
 			@PathVariable UUID patientId,
 			@Valid @RequestBody UserCatalogueTagAssignRequest body) {
 		User saved =
-				userService.assignCatalogueTag(patientId, body.assignedByDoctorId(), body.tagId());
+				userService.assignCatalogueTag(
+						patientId, body.assignedByDoctorId(), body.tagId(), body.critical());
 		return UserResponse.from(saved);
 	}
 

@@ -76,7 +76,11 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 	}
 
 	private String tagAssignJson(UUID assignedByDoctorId, UUID tagId) throws Exception {
-		return objectMapper.writeValueAsString(new UserCatalogueTagAssignRequest(assignedByDoctorId, tagId));
+		return objectMapper.writeValueAsString(new UserCatalogueTagAssignRequest(assignedByDoctorId, tagId, false));
+	}
+
+	private String tagAssignJson(UUID assignedByDoctorId, UUID tagId, boolean critical) throws Exception {
+		return objectMapper.writeValueAsString(new UserCatalogueTagAssignRequest(assignedByDoctorId, tagId, critical));
 	}
 
 	private UserResponse readUserResponse(MockHttpServletResponse response) throws Exception {

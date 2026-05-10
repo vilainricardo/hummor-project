@@ -155,6 +155,11 @@ public class UserService {
 	 */
 	@Transactional
 	public User assignCatalogueTag(UUID patientId, UUID assignedByDoctorId, UUID tagId) {
+		return assignCatalogueTag(patientId, assignedByDoctorId, tagId, false);
+	}
+
+	@Transactional
+	public User assignCatalogueTag(UUID patientId, UUID assignedByDoctorId, UUID tagId, boolean criticalForClinician) {
 		User patient = userRepository.findWithTagsById(patientId).orElseThrow(() -> UserNotFoundException.byId(patientId));
 		User clinician = resolveAssigningDoctor(assignedByDoctorId);
 
@@ -162,6 +167,13 @@ public class UserService {
 				patient.getTagAssignments().stream().anyMatch(
 						a -> assignedByDoctorId.equals(a.getAssignedBy().getId()) && tagId.equals(a.getTag().getId()));
 		if (alreadyHeld) {
+			patient.getTagAssignments().stream()
+					.filter(
+							a ->
+									assignedByDoctorId.equals(a.getAssignedBy().getId())
+											&& tagId.equals(a.getTag().getId()))
+					.findFirst()
+					.ifPresent(a -> a.setCriticalForClinician(criticalForClinician));
 			return userRepository.save(patient);
 		}
 
@@ -178,7 +190,7 @@ public class UserService {
 			throw new TagAssignmentSliceFullException(patientId, assignedByDoctorId);
 		}
 
-		new UserTagAssignment(patient, tag, clinician, Instant.now());
+		new UserTagAssignment(patient, tag, clinician, Instant.now(), criticalForClinician);
 		return userRepository.save(patient);
 	}
 

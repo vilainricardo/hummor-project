@@ -42,18 +42,31 @@ public class UserTagAssignment {
 	@JoinColumn(name = "assigned_by_user_id", nullable = false)
 	private User assignedBy;
 
+	/**
+	 * EN: Clinician marks this patient–tag link as clinically critical ({@code assigned_by} must be the doctor). PT-BR: Médico
+	 * marca a ligação paciente–etiqueta como crítica; auto-atribuições do paciente mantêm {@code false}.
+	 */
+	@Column(name = "is_critical", nullable = false)
+	private boolean criticalForClinician;
+
 	@Column(name = "assigned_at", nullable = false)
 	private Instant assignedAt;
 
 	protected UserTagAssignment() {
 	}
 
-	public UserTagAssignment(User patient, Tag tag, User assignedBy, Instant assignedAt) {
+	/** EN: New assignment; {@code criticalForClinician} is ignored for patient self-assignments (use {@code false}). PT-BR: Nova linha. */
+	public UserTagAssignment(User patient, Tag tag, User assignedBy, Instant assignedAt, boolean criticalForClinician) {
 		this.patient = Objects.requireNonNull(patient, "patient");
 		this.tag = Objects.requireNonNull(tag, "tag");
 		this.assignedBy = Objects.requireNonNull(assignedBy, "assignedBy");
 		this.assignedAt = Objects.requireNonNull(assignedAt, "assignedAt");
+		this.criticalForClinician = criticalForClinician;
 		patient.getTagAssignments().add(this);
+	}
+
+	public UserTagAssignment(User patient, Tag tag, User assignedBy, Instant assignedAt) {
+		this(patient, tag, assignedBy, assignedAt, false);
 	}
 
 	public UUID getId() {
@@ -74,6 +87,15 @@ public class UserTagAssignment {
 
 	public Instant getAssignedAt() {
 		return assignedAt;
+	}
+
+	public boolean isCriticalForClinician() {
+		return criticalForClinician;
+	}
+
+	/** EN: Updates whether the assigning clinician considers this tag critical for this patient. PT-BR: Actualiza flag de criticidade. */
+	public void setCriticalForClinician(boolean criticalForClinician) {
+		this.criticalForClinician = criticalForClinician;
 	}
 
 	private UUID patientIdOrNull() {
