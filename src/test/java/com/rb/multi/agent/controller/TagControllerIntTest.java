@@ -23,7 +23,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rb.multi.agent.dto.TagResponse;
 import com.rb.multi.agent.dto.TagWriteRequest;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.repository.TagRepository;
 
 /** EN: {@link TagController} HTTP contract. PT-BR: Contrato HTTP do {@link TagController}. */

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 
 /** EN: {@link TagCategoryController}. PT-BR: {@link TagCategoryController}. */
 class TagCategoryControllerIntTest extends AbstractControllerIntTest {

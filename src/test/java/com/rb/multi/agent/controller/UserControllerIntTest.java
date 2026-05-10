@@ -31,7 +31,8 @@ import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.entity.Tag;
+import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.repository.MoodEntryRepository;
 import com.rb.multi.agent.repository.SleepEntryRepository;
@@ -131,6 +132,7 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		assertThat(body.addressLine()).isEqualTo(sent.addressLine());
 		assertThat(body.createdAt()).isNotNull();
 		assertThat(body.tags()).isEmpty();
+		assertThat(body.selfAssignedTags()).isEmpty();
 	}
 
 	@Test
@@ -289,7 +291,8 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 								post("/api/v1/users/{uid}/tag-assignments", userId),
 								tagAssignJson(doctor.getId(), zebra.getId())))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.tags", hasSize(1)));
+				.andExpect(jsonPath("$.tags", hasSize(1)))
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(0)));
 		mockMvc.perform(
 						json(
 								post("/api/v1/users/{uid}/tag-assignments", userId),
@@ -298,11 +301,13 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 				.andExpect(jsonPath("$.doctor").value(false))
 				.andExpect(jsonPath("$.tags", hasSize(2)))
 				.andExpect(jsonPath("$.tags[0].name").value(alpha.getName()))
-				.andExpect(jsonPath("$.tags[1].name").value(zebra.getName()));
+				.andExpect(jsonPath("$.tags[1].name").value(zebra.getName()))
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(0)));
 
 		mockMvc.perform(get("/api/v1/users/{id}", userId).accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.tags", hasSize(2)));
+				.andExpect(jsonPath("$.tags", hasSize(2)))
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(0)));
 	}
 
 	@Test
@@ -893,5 +898,88 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/for-date", patientId), json))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+	}
+
+	@Test
+	@DisplayName("POST …/self-tag-assignments — paciente liga tag do catálogo; listada em selfAssignedTags")
+	void selfAssign_patient_addsTag() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		Tag catalogue = tagRepository.save(new Tag("self-pick-one", null, TagCategory.OTHER));
+		UserCreateRequest patient = userCreatePayload("self-tag-p", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID userId =
+				UUID.fromString(created.getResponse().getHeader("Location").substring(
+						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+
+		String body = "{\"tagId\":\"" + catalogue.getId() + "\"}";
+		mockMvc.perform(json(post("/api/v1/users/{id}/self-tag-assignments", userId), body))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(1)))
+				.andExpect(jsonPath("$.selfAssignedTags[0].id").value(catalogue.getId().toString()))
+				.andExpect(jsonPath("$.tags", hasSize(0)));
+
+		mockMvc.perform(json(post("/api/v1/users/{id}/self-tag-assignments", userId), body))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(1)));
+
+		mockMvc.perform(get("/api/v1/users/{id}", userId).accept(MediaType.APPLICATION_JSON))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.selfAssignedTags", hasSize(1)));
+	}
+
+	@Test
+	@DisplayName("POST …/self-tag-assignments — tag desconhecida → 400")
+	void selfAssign_unknownTag_returns400() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		UserCreateRequest patient = userCreatePayload("self-tag-unk", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID userId =
+				UUID.fromString(created.getResponse().getHeader("Location").substring(
+						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+		UUID phantom = UUID.randomUUID();
+		mockMvc.perform(
+						json(
+								post("/api/v1/users/{id}/self-tag-assignments", userId),
+								"{\"tagId\":\"" + phantom + "\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("TAG_REFERENCES_INVALID"));
+	}
+
+	@Test
+	@DisplayName("POST …/self-tag-assignments — sexta tag distinta → 400 PATIENT_SELF_TAG_SLICE_FULL")
+	void selfAssign_sixthDistinct_returns400() throws Exception {
+		userRepository.deleteAll();
+		tagRepository.deleteAll();
+		List<Tag> tags =
+				IntStream.range(0, 6)
+						.mapToObj(i -> tagRepository.save(new Tag("self-max-" + i, null, TagCategory.OTHER)))
+						.toList();
+		UserCreateRequest patient = userCreatePayload("self-tag-max", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		UUID userId =
+				UUID.fromString(created.getResponse().getHeader("Location").substring(
+						created.getResponse().getHeader("Location").lastIndexOf('/') + 1));
+		for (int i = 0; i < 5; i++) {
+			String b = "{\"tagId\":\"" + tags.get(i).getId() + "\"}";
+			mockMvc.perform(json(post("/api/v1/users/{id}/self-tag-assignments", userId), b))
+					.andExpect(status().isOk());
+		}
+		mockMvc.perform(
+						json(
+								post("/api/v1/users/{id}/self-tag-assignments", userId),
+								"{\"tagId\":\"" + tags.get(5).getId() + "\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("PATIENT_SELF_TAG_SLICE_FULL"));
 	}
 }

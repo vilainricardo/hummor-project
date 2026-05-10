@@ -50,5 +50,8 @@ public enum ApiProblemCode {
 	MOOD_ENTRY_TOO_SOON,
 
 	/** EN: Patient already has a sleep score for that calendar day. PT-BR: Já existe registo de sono para esse dia. */
-	SLEEP_ENTRY_DAY_CONFLICT
+	SLEEP_ENTRY_DAY_CONFLICT,
+
+	/** EN: Too many distinct catalogue tags self-assigned by this patient. PT-BR: Máximo de tags auto-atribuídas pelo paciente. */
+	PATIENT_SELF_TAG_SLICE_FULL
 }

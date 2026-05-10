@@ -1,10 +1,10 @@
-package com.rb.multi.agent.entity;
+package com.rb.multi.agent.constants;
 
 /**
  * <p><b>EN:</b> Groups catalogue tags for API filtering/search only (not a clinical classification).</p>
  * <p><b>PT-BR:</b> Agrupa tags do catálogo apenas para filtros/pesquisa na API (não é classificação clínica).</p>
- * <p><b>EN:</b> Concrete labels live in {@link Tag#getName()}; categories narrow result sets.</p>
- * <p><b>PT-BR:</b> Rótulos concretos estão em {@link Tag#getName()}; categorias reduzem o conjunto de resultados.</p>
+ * <p><b>EN:</b> Concrete labels live in {@link com.rb.multi.agent.entity.Tag#getName()}; categories narrow result sets.</p>
+ * <p><b>PT-BR:</b> Rótulos concretos estão em {@link com.rb.multi.agent.entity.Tag#getName()}; categorias reduzem o conjunto de resultados.</p>
  */
 public enum TagCategory {
 

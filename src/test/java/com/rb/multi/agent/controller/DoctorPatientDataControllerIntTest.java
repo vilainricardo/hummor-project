@@ -17,7 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.rb.multi.agent.entity.Doctor;
 import com.rb.multi.agent.entity.DoctorPatientAssociation;
 import com.rb.multi.agent.entity.DoctorPatientKey;
-import com.rb.multi.agent.entity.DoctorPatientLinkStatus;
+import com.rb.multi.agent.constants.DoctorPatientLinkStatus;
 import com.rb.multi.agent.entity.MoodEntry;
 import com.rb.multi.agent.entity.SleepEntry;
 import com.rb.multi.agent.entity.User;

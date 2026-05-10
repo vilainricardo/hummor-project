@@ -23,6 +23,7 @@ import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.DuplicateUserEmailException;
+import com.rb.multi.agent.exception.PatientSelfTagSliceFullException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
@@ -42,6 +43,9 @@ public class UserService {
 
 	private static final int MIN_PASSWORD_LENGTH = 8;
 	private static final int MAX_DISTINCT_TAGS_PER_CLINICIAN_PER_PATIENT = 5;
+
+	/** EN: Distinct catalogue tags the patient may self-assign ({@code assigned_by} = patient). PT-BR: Máximo de tags auto-atribuídas. */
+	private static final int MAX_DISTINCT_SELF_TAGS_PER_PATIENT = 5;
 
 	private final UserRepository userRepository;
 	private final TagRepository tagRepository;
@@ -175,6 +179,40 @@ public class UserService {
 		}
 
 		new UserTagAssignment(patient, tag, clinician, Instant.now());
+		return userRepository.save(patient);
+	}
+
+	/**
+	 * <p><b>EN:</b> Patient adds one catalogue tag with {@code assigned_by} = own user id (distinct from clinician slice rows).</p>
+	 * <p><b>PT-BR:</b> Paciente auto-atribui uma tag do catálogo (atribuidor = próprio utilizador).</p>
+	 */
+	@Transactional
+	public User selfAssignCatalogueTag(UUID patientId, UUID tagId) {
+		User patient = userRepository.findWithTagsById(patientId).orElseThrow(() -> UserNotFoundException.byId(patientId));
+
+		boolean alreadyHeld =
+				patient.getTagAssignments().stream()
+						.anyMatch(
+								a ->
+										patientId.equals(a.getAssignedBy().getId()) && tagId.equals(a.getTag().getId()));
+		if (alreadyHeld) {
+			return userRepository.save(patient);
+		}
+
+		Tag tag =
+				tagRepository.findById(tagId).orElseThrow(() -> new UnknownTagReferencesException(Set.of(tagId)));
+
+		long distinctSelf =
+				patient.getTagAssignments().stream()
+						.filter(a -> patientId.equals(a.getAssignedBy().getId()))
+						.map(a -> a.getTag().getId())
+						.distinct()
+						.count();
+		if (distinctSelf >= MAX_DISTINCT_SELF_TAGS_PER_PATIENT) {
+			throw new PatientSelfTagSliceFullException(patientId);
+		}
+
+		new UserTagAssignment(patient, tag, patient, Instant.now());
 		return userRepository.save(patient);
 	}
 

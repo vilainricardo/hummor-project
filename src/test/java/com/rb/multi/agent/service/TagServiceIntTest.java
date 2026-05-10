@@ -16,7 +16,7 @@ import jakarta.persistence.EntityManager;
 
 import com.rb.multi.agent.dto.TagWriteRequest;
 import com.rb.multi.agent.entity.Tag;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.repository.TagRepository;

@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.rb.multi.agent.entity.Tag;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 
 /**
  * <p><b>EN:</b> Read-model DTO for {@link Tag} responses.</p>

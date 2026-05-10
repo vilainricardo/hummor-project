@@ -1,5 +1,7 @@
 package com.rb.multi.agent.entity;
 
+import com.rb.multi.agent.constants.TagCategory;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;

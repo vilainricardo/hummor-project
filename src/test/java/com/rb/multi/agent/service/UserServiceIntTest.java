@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.Tag;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.AssigningActorNotDoctorException;
 import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;

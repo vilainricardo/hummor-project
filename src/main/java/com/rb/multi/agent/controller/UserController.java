@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.rb.multi.agent.dto.MoodEntryCreateRequest;
+import com.rb.multi.agent.dto.PatientSelfTagAssignRequest;
 import com.rb.multi.agent.dto.MutualDoctorCodeRequest;
 import com.rb.multi.agent.dto.MutualDoctorPatientLinkResponse;
 import com.rb.multi.agent.dto.MutualPatientCodeRequest;
@@ -152,6 +153,15 @@ public class UserController {
 	public MutualDoctorPatientLinkResponse mutualLinkDoctorTowardPatient(
 			@PathVariable UUID doctorUserId, @Valid @RequestBody MutualPatientCodeRequest body) {
 		return mutualDoctorPatientLinkService.doctorAcknowledgesPatient(doctorUserId, body.patientCode());
+	}
+
+	/** EN: Patient links one catalogue tag to themselves ({@code assigned_by} = user when not a doctor profile). PT-BR: Paciente auto-atribui tag do catálogo. */
+	@PostMapping("/{patientId}/self-tag-assignments")
+	public UserResponse selfAssignCatalogueTag(
+			@PathVariable UUID patientId,
+			@Valid @RequestBody PatientSelfTagAssignRequest body) {
+		User saved = userService.selfAssignCatalogueTag(patientId, body.tagId());
+		return UserResponse.from(saved);
 	}
 
 	/** EN: Clínico associa ao paciente uma etiqueta existente no catálogo. PT-BR: Médico liga ao paciente uma tag do catálogo. */

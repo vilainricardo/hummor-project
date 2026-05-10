@@ -1,5 +1,7 @@
 package com.rb.multi.agent.entity;
 
+import com.rb.multi.agent.constants.DoctorPatientLinkStatus;
+
 import java.time.LocalDate;
 import java.util.Objects;
 

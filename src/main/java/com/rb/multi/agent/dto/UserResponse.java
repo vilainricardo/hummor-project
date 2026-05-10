@@ -27,23 +27,35 @@ public record UserResponse(
 		String city,
 		String addressLine,
 		Instant createdAt,
-		List<TagResponse> tags) {
+		List<TagResponse> tags,
+		List<TagResponse> selfAssignedTags) {
 
 	/**
-	 * <p><b>EN:</b> Maps entity to JSON; {@code tags} lists each catalogue tag once, only from clinician assignments.</p>
-	 * <p><b>PT-BR:</b> Converte entidade para JSON; {@code tags} lista cada etiqueta do catálogo uma vez, só com atribuição por médico.</p>
+	 * <p><b>EN:</b> Maps entity to JSON; {@code tags} lists catalogue tags from clinicians; {@code selfAssignedTags} from
+	 * patient self-assignments ({@code assigned_by} = patient).</p>
+	 * <p><b>PT-BR:</b> {@code tags} = etiquetas atribuídas por médicos; {@code selfAssignedTags} = auto-atribuições do paciente.</p>
 	 */
 	public static UserResponse from(User entity) {
 		var uniqueByTagId = new LinkedHashMap<UUID, Tag>();
+		var uniqueSelfByTagId = new LinkedHashMap<UUID, Tag>();
+		UUID selfId = entity.getId();
 		for (UserTagAssignment a : entity.getTagAssignments()) {
 			var assigner = a.getAssignedBy();
-			if (assigner == null || !assigner.isDoctor()) {
+			if (assigner == null) {
 				continue;
 			}
 			Tag tag = a.getTag();
-			uniqueByTagId.putIfAbsent(tag.getId(), tag);
+			if (assigner.getId().equals(selfId) && !assigner.isDoctor()) {
+				uniqueSelfByTagId.putIfAbsent(tag.getId(), tag);
+			} else if (assigner.isDoctor()) {
+				uniqueByTagId.putIfAbsent(tag.getId(), tag);
+			}
 		}
 		List<TagResponse> tagList = uniqueByTagId.values().stream()
+				.sorted(Comparator.comparing(t -> t.getName().toLowerCase(Locale.ROOT)))
+				.map(TagResponse::from)
+				.toList();
+		List<TagResponse> selfList = uniqueSelfByTagId.values().stream()
 				.sorted(Comparator.comparing(t -> t.getName().toLowerCase(Locale.ROOT)))
 				.map(TagResponse::from)
 				.toList();
@@ -59,6 +71,7 @@ public record UserResponse(
 				entity.getCity(),
 				entity.getAddressLine(),
 				entity.getCreatedAt(),
-				tagList);
+				tagList,
+				selfList);
 	}
 }

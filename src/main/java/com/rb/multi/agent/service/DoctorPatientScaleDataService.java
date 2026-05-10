@@ -14,7 +14,7 @@ import com.rb.multi.agent.dto.ScaleEntryResponse;
 import com.rb.multi.agent.entity.Doctor;
 import com.rb.multi.agent.entity.DoctorPatientAssociation;
 import com.rb.multi.agent.entity.DoctorPatientKey;
-import com.rb.multi.agent.entity.DoctorPatientLinkStatus;
+import com.rb.multi.agent.constants.DoctorPatientLinkStatus;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.DoctorPatientLinkNotFoundException;
 import com.rb.multi.agent.exception.NotDoctorProfileException;

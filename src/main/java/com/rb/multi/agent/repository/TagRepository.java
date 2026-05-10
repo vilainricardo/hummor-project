@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.rb.multi.agent.entity.Tag;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 
 /**
  * <p><b>EN:</b> Persistence port for catalogue {@link Tag} rows keyed by UUID.</p>

@@ -23,6 +23,7 @@ import com.rb.multi.agent.exception.AssigningDoctorNotFoundException;
 import com.rb.multi.agent.exception.DuplicateTagNameException;
 import com.rb.multi.agent.exception.DuplicateUserCodeException;
 import com.rb.multi.agent.exception.DuplicateUserEmailException;
+import com.rb.multi.agent.exception.PatientSelfTagSliceFullException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.TagNotFoundException;
@@ -235,6 +236,19 @@ public class ApiExceptionHandler {
 						"error.user.tagAssignment.sliceFull",
 						ex.assignedByDoctorId().toString(),
 						ex.patientId().toString()),
+				null);
+	}
+
+	/** EN: Patient exceeded distinct self-assigned catalogue tags. PT-BR: Limite de tags auto-atribuídas pelo paciente. */
+	@ExceptionHandler(PatientSelfTagSliceFullException.class)
+	public ResponseEntity<ApiErrorResponse> patientSelfTagSliceFull(
+			PatientSelfTagSliceFullException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.BAD_REQUEST,
+				ApiProblemCode.PATIENT_SELF_TAG_SLICE_FULL,
+				msg("error.user.selfTag.sliceFull", ex.patientId().toString()),
 				null);
 	}
 

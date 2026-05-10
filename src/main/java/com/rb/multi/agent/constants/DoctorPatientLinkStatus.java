@@ -1,4 +1,4 @@
-package com.rb.multi.agent.entity;
+package com.rb.multi.agent.constants;
 
 /**
  * <p><b>EN:</b> Lifecycle of an established doctor–patient roster link (FR-003).</p>

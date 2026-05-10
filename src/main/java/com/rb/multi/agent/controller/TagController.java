@@ -18,7 +18,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.rb.multi.agent.dto.TagResponse;
 import com.rb.multi.agent.dto.TagWriteRequest;
-import com.rb.multi.agent.entity.TagCategory;
+import com.rb.multi.agent.constants.TagCategory;
 import com.rb.multi.agent.exception.TagNotFoundException;
 import com.rb.multi.agent.service.TagService;
 
