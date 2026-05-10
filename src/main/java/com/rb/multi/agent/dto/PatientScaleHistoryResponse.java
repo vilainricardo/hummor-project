@@ -14,5 +14,6 @@ public record PatientScaleHistoryResponse(
 		Instant queryFromInclusive,
 		Instant queryToInclusive,
 		List<ScaleEntryResponse> moodEntries,
-		List<ScaleEntryResponse> sleepEntries) {
+		List<ScaleEntryResponse> sleepEntries,
+		List<TrendIndicatorResponse> trendIndicators) {
 }

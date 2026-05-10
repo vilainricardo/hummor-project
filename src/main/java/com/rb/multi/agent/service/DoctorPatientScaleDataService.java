@@ -3,13 +3,18 @@ package com.rb.multi.agent.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.rb.multi.agent.dto.PatientScaleHistoryResponse;
+import com.rb.multi.agent.dto.TrendIndicatorResponse;
 import com.rb.multi.agent.dto.ScaleEntryResponse;
 import com.rb.multi.agent.entity.Doctor;
 import com.rb.multi.agent.entity.DoctorPatientAssociation;
@@ -21,9 +26,14 @@ import com.rb.multi.agent.exception.NotDoctorProfileException;
 import com.rb.multi.agent.exception.PatientDataAccessRevokedException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 import com.rb.multi.agent.repository.DoctorPatientAssociationRepository;
+import com.rb.multi.agent.entity.MoodEntry;
+import com.rb.multi.agent.entity.SleepEntry;
 import com.rb.multi.agent.repository.MoodEntryRepository;
 import com.rb.multi.agent.repository.SleepEntryRepository;
 import com.rb.multi.agent.repository.UserRepository;
+
+import com.rb.multi.agent.service.ScalePeriodTrendCalculator.TrendComputation;
+import com.rb.multi.agent.service.ScalePeriodTrendCalculator.TrendDirection;
 
 /**
  * <p><b>EN:</b> Read-only access for doctors to patient mood/sleep series, clamped to FR-004 consent start and blocked when
@@ -37,16 +47,19 @@ public class DoctorPatientScaleDataService {
 	private final DoctorPatientAssociationRepository associationRepository;
 	private final MoodEntryRepository moodEntryRepository;
 	private final SleepEntryRepository sleepEntryRepository;
+	private final MessageSource messageSource;
 
 	public DoctorPatientScaleDataService(
 			UserRepository userRepository,
 			DoctorPatientAssociationRepository associationRepository,
 			MoodEntryRepository moodEntryRepository,
-			SleepEntryRepository sleepEntryRepository) {
+			SleepEntryRepository sleepEntryRepository,
+			MessageSource messageSource) {
 		this.userRepository = userRepository;
 		this.associationRepository = associationRepository;
 		this.moodEntryRepository = moodEntryRepository;
 		this.sleepEntryRepository = sleepEntryRepository;
+		this.messageSource = messageSource;
 	}
 
 	private DoctorPatientAssociation requireReadableAssociation(UUID doctorId, UUID patientId) {
@@ -118,27 +131,59 @@ public class DoctorPatientScaleDataService {
 		EffectiveWindow w = effectiveWindow(assoc, from, to);
 		if (w.fromInclusive().isAfter(w.toInclusive())) {
 			return new PatientScaleHistoryResponse(
-					assoc.getAccessStartDate(), w.fromInclusive(), w.toInclusive(), List.of(), List.of());
+					assoc.getAccessStartDate(), w.fromInclusive(), w.toInclusive(), List.of(), List.of(), List.of());
 		}
-		List<ScaleEntryResponse> mood =
-				moodEntryRepository
-						.findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
-								patientId, w.fromInclusive(), w.toInclusive())
-						.stream()
-						.map(ScaleEntryResponse::fromMood)
-						.toList();
+		List<MoodEntry> moodEntities =
+				moodEntryRepository.findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
+						patientId, w.fromInclusive(), w.toInclusive());
+		List<ScaleEntryResponse> mood = moodEntities.stream().map(ScaleEntryResponse::fromMood).toList();
 		LocalDate fromDay = w.fromInclusive().atZone(ZoneOffset.UTC).toLocalDate();
 		LocalDate toDay = w.toInclusive().atZone(ZoneOffset.UTC).toLocalDate();
-		List<ScaleEntryResponse> sleep =
+		List<SleepEntry> sleepEntities =
 				fromDay.isAfter(toDay)
 						? List.of()
-						: sleepEntryRepository
-								.findByPatient_IdAndRecordedOnBetweenOrderByRecordedOnDesc(patientId, fromDay, toDay)
-								.stream()
-								.map(ScaleEntryResponse::fromSleep)
-								.toList();
+						: sleepEntryRepository.findByPatient_IdAndRecordedOnBetweenOrderByRecordedOnDesc(patientId, fromDay, toDay);
+		List<ScaleEntryResponse> sleep = sleepEntities.stream().map(ScaleEntryResponse::fromSleep).toList();
+		List<TrendIndicatorResponse> trends = buildTrendIndicators(moodEntities, sleepEntities, w);
 		return new PatientScaleHistoryResponse(
-				assoc.getAccessStartDate(), w.fromInclusive(), w.toInclusive(), mood, sleep);
+				assoc.getAccessStartDate(), w.fromInclusive(), w.toInclusive(), mood, sleep, trends);
+	}
+
+	private List<TrendIndicatorResponse> buildTrendIndicators(
+			List<MoodEntry> moodEntries, List<SleepEntry> sleepEntries, EffectiveWindow w) {
+		List<TrendIndicatorResponse> list = new ArrayList<>();
+		Locale locale = LocaleContextHolder.getLocale();
+		ScalePeriodTrendCalculator.computeMood(moodEntries, w.fromInclusive(), w.toInclusive())
+				.ifPresent(c -> list.add(toTrendResponse("MOOD", c, locale)));
+		ScalePeriodTrendCalculator.computeSleep(sleepEntries, w.fromInclusive(), w.toInclusive())
+				.ifPresent(c -> list.add(toTrendResponse("SLEEP", c, locale)));
+		return List.copyOf(list);
+	}
+
+	private TrendIndicatorResponse toTrendResponse(String scaleKind, TrendComputation comp, Locale locale) {
+		TrendDirection dir =
+				ScalePeriodTrendCalculator.direction(comp.firstHalfAverage(), comp.secondHalfAverage());
+		String ruleKey =
+				"trend.rule."
+						+ dir.name()
+						+ "."
+						+ comp.criticality().name();
+		String scaleLabel =
+				messageSource.getMessage(
+						"TrendIndicator.scale." + scaleKind, null, "TrendIndicator.scale." + scaleKind, locale);
+		String message =
+				messageSource.getMessage(ruleKey, new Object[] { scaleLabel, comp.secondHalfAverage() }, ruleKey, locale);
+		return new TrendIndicatorResponse(
+				scaleKind,
+				round3(comp.firstHalfAverage()),
+				round3(comp.secondHalfAverage()),
+				round3(comp.periodWeightedAverage()),
+				comp.criticality().name(),
+				message);
+	}
+
+	private static double round3(double v) {
+		return Math.round(v * 1000.0) / 1000.0;
 	}
 
 	/** EN: Internal result of consent + request clamping. PT-BR: Resultado interno do clamp consentimento + pedido. */

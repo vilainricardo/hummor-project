@@ -67,7 +67,8 @@ class DoctorPatientDataControllerIntTest extends AbstractControllerIntTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.patientAccessStartDate").value("2020-01-01"))
 				.andExpect(jsonPath("$.moodEntries", hasSize(1)))
-				.andExpect(jsonPath("$.sleepEntries", hasSize(1)));
+				.andExpect(jsonPath("$.sleepEntries", hasSize(1)))
+				.andExpect(jsonPath("$.trendIndicators").isArray());
 	}
 
 	@Test
