@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,15 +17,21 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.rb.multi.agent.dto.MoodEntryCreateRequest;
 import com.rb.multi.agent.dto.MutualDoctorCodeRequest;
 import com.rb.multi.agent.dto.MutualDoctorPatientLinkResponse;
 import com.rb.multi.agent.dto.MutualPatientCodeRequest;
 import com.rb.multi.agent.dto.UserCatalogueTagAssignRequest;
 import com.rb.multi.agent.dto.UserCreateRequest;
 import com.rb.multi.agent.dto.UserResponse;
+import com.rb.multi.agent.dto.ScaleEntryResponse;
+import com.rb.multi.agent.dto.SleepEntryForDateRequest;
+import com.rb.multi.agent.dto.SleepEntryTodayRequest;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.UserNotFoundException;
+import com.rb.multi.agent.service.MoodEntryService;
+import com.rb.multi.agent.service.SleepEntryService;
 import com.rb.multi.agent.service.MutualDoctorPatientLinkService;
 import com.rb.multi.agent.service.UserService;
 
@@ -40,10 +47,18 @@ public class UserController {
 
 	private final UserService userService;
 	private final MutualDoctorPatientLinkService mutualDoctorPatientLinkService;
+	private final MoodEntryService moodEntryService;
+	private final SleepEntryService sleepEntryService;
 
-	public UserController(UserService userService, MutualDoctorPatientLinkService mutualDoctorPatientLinkService) {
+	public UserController(
+			UserService userService,
+			MutualDoctorPatientLinkService mutualDoctorPatientLinkService,
+			MoodEntryService moodEntryService,
+			SleepEntryService sleepEntryService) {
 		this.userService = userService;
 		this.mutualDoctorPatientLinkService = mutualDoctorPatientLinkService;
+		this.moodEntryService = moodEntryService;
+		this.sleepEntryService = sleepEntryService;
 	}
 
 	/** EN: Full user list projection. PT-BR: Lista todos os utilizadores (projeção de leitura). */
@@ -66,6 +81,45 @@ public class UserController {
 		return userService.findByCode(code)
 				.map(UserResponse::from)
 				.orElseThrow(() -> UserNotFoundException.byCode(code));
+	}
+
+	/** EN: Patient records one mood score (0–10); at most one row per rolling minute per patient. PT-BR: Paciente regista humor (0–10); máximo 1 por minuto. */
+	@PostMapping("/{id}/mood-entries")
+	public ResponseEntity<ScaleEntryResponse> createMoodEntry(
+			@PathVariable("id") UUID patientUserId,
+			@Valid @RequestBody MoodEntryCreateRequest body) {
+		ScaleEntryResponse saved = moodEntryService.registerMood(patientUserId, body.value());
+		URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+				.path("/{entryId}")
+				.buildAndExpand(saved.id())
+				.toUri();
+		return ResponseEntity.status(HttpStatus.CREATED).location(location).body(saved);
+	}
+
+	/** EN: Sleep score (0–10) for the current UTC day; 409 if that day already has a row. PT-BR: Sono (0–10) para o dia UTC actual; 409 se o dia já tiver registo. */
+	@PostMapping("/{id}/sleep-entries/today")
+	public ResponseEntity<ScaleEntryResponse> createSleepEntryForToday(
+			@PathVariable("id") UUID patientUserId,
+			@Valid @RequestBody SleepEntryTodayRequest body) {
+		ScaleEntryResponse saved = sleepEntryService.registerForToday(patientUserId, body.value());
+		URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+				.path("/{entryId}")
+				.buildAndExpand(saved.id())
+				.toUri();
+		return ResponseEntity.status(HttpStatus.CREATED).location(location).body(saved);
+	}
+
+	/** EN: Sleep score for a specific UTC calendar day; 409 if that day already has a row. PT-BR: Sono para dia civil UTC; 409 se já existir. */
+	@PostMapping("/{id}/sleep-entries/for-date")
+	public ResponseEntity<ScaleEntryResponse> createSleepEntryForDate(
+			@PathVariable("id") UUID patientUserId,
+			@Valid @RequestBody SleepEntryForDateRequest body) {
+		ScaleEntryResponse saved = sleepEntryService.registerForDay(patientUserId, body.value(), body.date());
+		URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+				.path("/{entryId}")
+				.buildAndExpand(saved.id())
+				.toUri();
+		return ResponseEntity.status(HttpStatus.CREATED).location(location).body(saved);
 	}
 
 	/** EN: Registers profile + {@code Location} (no tag links on create). PT-BR: Regista perfil + {@code Location} (sem tags na criação). */

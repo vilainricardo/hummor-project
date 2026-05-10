@@ -30,6 +30,8 @@ import com.rb.multi.agent.exception.DoctorPatientLinkNotFoundException;
 import com.rb.multi.agent.exception.NotDoctorProfileException;
 import com.rb.multi.agent.exception.PatientDataAccessRevokedException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
+import com.rb.multi.agent.exception.MoodEntryTooSoonException;
+import com.rb.multi.agent.exception.SleepEntryDayConflictException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -99,6 +101,30 @@ public class ApiExceptionHandler {
 						"error.doctorPatient.notLinked",
 						ex.getDoctorId().toString(),
 						ex.getPatientId().toString()),
+				null);
+	}
+
+	/** EN: Mood entry within minimum interval (rolling 1 minute). PT-BR: Registo de humor demasiado cedo (janela de 1 minuto). */
+	@ExceptionHandler(MoodEntryTooSoonException.class)
+	public ResponseEntity<ApiErrorResponse> moodEntryTooSoon(MoodEntryTooSoonException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.TOO_MANY_REQUESTS,
+				ApiProblemCode.MOOD_ENTRY_TOO_SOON,
+				msg("error.mood.tooSoon"),
+				null);
+	}
+
+	/** EN: Sleep row already present for that UTC calendar day. PT-BR: Já existe sono registado para esse dia (UTC). */
+	@ExceptionHandler(SleepEntryDayConflictException.class)
+	public ResponseEntity<ApiErrorResponse> sleepEntryDayConflict(
+			SleepEntryDayConflictException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.CONFLICT,
+				ApiProblemCode.SLEEP_ENTRY_DAY_CONFLICT,
+				msg("error.sleep.dayConflict", ex.getRecordedOn().toString()),
 				null);
 	}
 

@@ -19,8 +19,8 @@ Este ficheiro consolida requisitos dos documentos em `docs/` e o estado observad
 | FR-001 | Código de utilizador único (público) | [~] Código no registo; unicidade e `GET /by-code/{code}`; geração automática pelo servidor não exposta como feature isolada |
 | FR-002 | Vínculo bilateral (ambos adicionam código) | [x] `MutualDoctorPatientLinkService` + `POST …/mutual-links/doctor-code` (com `accessStartDate`) e `…/patient-code` |
 | FR-003 | Desvinculação com estados (ativo / com acesso / sem acesso) | [~] Campo `DoctorPatientLinkStatus` em `doctor_patients` (`DoctorPatientAssociation`); **falta** API/serviço explícito para transições de estado |
-| FR-004 | Data de início de acesso (paciente define partilha) | [x] `access_start_date` no vínculo mútuo e na lista `doctor_patients`; leituras médico filtram `created_at` ≥ consentimento (`DoctorPatientScaleDataService`) |
-| FR-005 | Registo de humor | [~] Entidade `MoodEntry` + tabela `mood_entries` (escala 0–10 produto); **falta** endpoint paciente para criar registo |
+| FR-004 | Data de início de acesso (paciente define partilha) | [x] **Feito:** paciente envia `accessStartDate` em `POST …/mutual-links/doctor-code`; valor gravado no vínculo pendente e copiado para `doctor_patients.access_start_date`; médico só vê dados com `created_at` ≥ esse dia (`DoctorPatientScaleDataService`). |
+| FR-005 | Registo de humor | [~] **Parcial:** domínio `MoodEntry` + tabela `mood_entries` (0–10), testes de entidade e **leitura médico** com período/consentimento. **Em falta para fechar o FR no SRS:** endpoint HTTP (ex. `POST`) para o **paciente** criar cada registo de humor. |
 | FR-006 | Registo de sono | [~] Entidade `SleepEntry` + tabela `sleep_entries` (0–10); **falta** endpoint paciente para criar registo |
 | FR-007 | Registo de evento com 1 tag (união `user_tag_assignments`) | [ ] Sem entidade/evento TAG nem API paciente |
 | FR-008 | Configuração de tags (POST/DELETE, ≤5 por médico, etc.) | [x] Migrações + `UserService` + `UserController` + testes |

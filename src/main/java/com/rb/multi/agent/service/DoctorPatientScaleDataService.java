@@ -1,6 +1,7 @@
 package com.rb.multi.agent.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -99,9 +100,13 @@ public class DoctorPatientScaleDataService {
 		if (w.fromInclusive().isAfter(w.toInclusive())) {
 			return List.of();
 		}
+		LocalDate fromDay = w.fromInclusive().atZone(ZoneOffset.UTC).toLocalDate();
+		LocalDate toDay = w.toInclusive().atZone(ZoneOffset.UTC).toLocalDate();
+		if (fromDay.isAfter(toDay)) {
+			return List.of();
+		}
 		return sleepEntryRepository
-				.findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
-						patientId, w.fromInclusive(), w.toInclusive())
+				.findByPatient_IdAndRecordedOnBetweenOrderByRecordedOnDesc(patientId, fromDay, toDay)
 				.stream()
 				.map(ScaleEntryResponse::fromSleep)
 				.toList();
@@ -122,13 +127,16 @@ public class DoctorPatientScaleDataService {
 						.stream()
 						.map(ScaleEntryResponse::fromMood)
 						.toList();
+		LocalDate fromDay = w.fromInclusive().atZone(ZoneOffset.UTC).toLocalDate();
+		LocalDate toDay = w.toInclusive().atZone(ZoneOffset.UTC).toLocalDate();
 		List<ScaleEntryResponse> sleep =
-				sleepEntryRepository
-						.findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
-								patientId, w.fromInclusive(), w.toInclusive())
-						.stream()
-						.map(ScaleEntryResponse::fromSleep)
-						.toList();
+				fromDay.isAfter(toDay)
+						? List.of()
+						: sleepEntryRepository
+								.findByPatient_IdAndRecordedOnBetweenOrderByRecordedOnDesc(patientId, fromDay, toDay)
+								.stream()
+								.map(ScaleEntryResponse::fromSleep)
+								.toList();
 		return new PatientScaleHistoryResponse(
 				assoc.getAccessStartDate(), w.fromInclusive(), w.toInclusive(), mood, sleep);
 	}

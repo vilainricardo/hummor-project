@@ -1,6 +1,6 @@
 package com.rb.multi.agent.repository;
 
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,6 +14,9 @@ import com.rb.multi.agent.entity.SleepEntry;
  */
 public interface SleepEntryRepository extends JpaRepository<SleepEntry, UUID> {
 
-	List<SleepEntry> findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
-			UUID patientId, Instant fromInclusive, Instant toInclusive);
+	/** EN: Sleep diary rows for {@code recordedOn} in [{@code fromInclusive}, {@code toInclusive}] (inclusive calendar days). */
+	List<SleepEntry> findByPatient_IdAndRecordedOnBetweenOrderByRecordedOnDesc(
+			UUID patientId, LocalDate fromInclusive, LocalDate toInclusive);
+
+	boolean existsByPatient_IdAndRecordedOn(UUID patientId, LocalDate recordedOn);
 }

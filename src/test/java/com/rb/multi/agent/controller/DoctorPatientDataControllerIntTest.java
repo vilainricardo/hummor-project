@@ -57,7 +57,7 @@ class DoctorPatientDataControllerIntTest extends AbstractControllerIntTest {
 	void linkedDoctor_readsMoodAndSleep() throws Exception {
 		var pair = saveLinkedPair("doc-scale", "pat-scale", LocalDate.of(2020, 1, 1));
 		moodEntryRepository.save(new MoodEntry(pair.patient(), 6));
-		sleepEntryRepository.save(new SleepEntry(pair.patient(), 8));
+		sleepEntryRepository.save(new SleepEntry(pair.patient(), 8, LocalDate.of(2025, 6, 10)));
 
 		mockMvc.perform(get(apiMood(pair.doctorUserId(), pair.patientId()))).andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
 

@@ -1,6 +1,7 @@
 package com.rb.multi.agent.dto;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import com.rb.multi.agent.entity.MoodEntry;
@@ -17,6 +18,7 @@ public record ScaleEntryResponse(UUID id, String kind, int value, Instant record
 	}
 
 	public static ScaleEntryResponse fromSleep(SleepEntry e) {
-		return new ScaleEntryResponse(e.getId(), "SLEEP", e.getValue(), e.getCreatedAt());
+		Instant anchor = e.getRecordedOn().atStartOfDay(ZoneOffset.UTC).toInstant();
+		return new ScaleEntryResponse(e.getId(), "SLEEP", e.getValue(), anchor);
 	}
 }

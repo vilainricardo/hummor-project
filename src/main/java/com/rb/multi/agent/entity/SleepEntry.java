@@ -1,6 +1,7 @@
 package com.rb.multi.agent.entity;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -45,6 +46,10 @@ public class SleepEntry {
 	@Column(name = "value", nullable = false)
 	private int value;
 
+	/** EN: Calendar day (UTC) this score refers to — at most one row per patient per day. PT-BR: Dia civil (UTC) do registo. */
+	@Column(name = "recorded_on", nullable = false, columnDefinition = "DATE")
+	private LocalDate recordedOn;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -52,12 +57,13 @@ public class SleepEntry {
 	}
 
 	/**
-	 * EN: New sleep entry; {@code value} must be in [{@link #MIN_SCORE}, {@link #MAX_SCORE}]. {@link #createdAt} defaults at persist.
-	 * PT-BR: Novo registo; {@code value} ∈ [0, 10]; {@code created_at} na persistência.
+	 * EN: New sleep entry for {@code recordedOn} (UTC calendar day); {@code value} ∈ [0, 10]; {@link #createdAt} at persist if unset.
+	 * PT-BR: Novo registo de sono para o dia {@code recordedOn}; {@code created_at} na persistência se não definido.
 	 */
-	public SleepEntry(User patient, int value) {
+	public SleepEntry(User patient, int value, LocalDate recordedOn) {
 		this.patient = Objects.requireNonNull(patient, "patient");
 		this.value = checkScore(value);
+		this.recordedOn = Objects.requireNonNull(recordedOn, "recordedOn");
 	}
 
 	private static int checkScore(int value) {
@@ -85,6 +91,10 @@ public class SleepEntry {
 
 	public int getValue() {
 		return value;
+	}
+
+	public LocalDate getRecordedOn() {
+		return recordedOn;
 	}
 
 	public Instant getCreatedAt() {

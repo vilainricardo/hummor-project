@@ -44,5 +44,11 @@ public enum ApiProblemCode {
 	DOCTOR_PATIENT_NOT_LINKED,
 
 	/** EN: Patient revoked clinician access to data (FR-003). PT-BR: Paciente revogou acesso aos dados (FR-003). */
-	PATIENT_DATA_ACCESS_REVOKED
+	PATIENT_DATA_ACCESS_REVOKED,
+
+	/** EN: Patient posted a mood entry within the minimum interval. PT-BR: Humor registado dentro do intervalo mínimo. */
+	MOOD_ENTRY_TOO_SOON,
+
+	/** EN: Patient already has a sleep score for that calendar day. PT-BR: Já existe registo de sono para esse dia. */
+	SLEEP_ENTRY_DAY_CONFLICT
 }

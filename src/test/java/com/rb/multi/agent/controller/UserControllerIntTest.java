@@ -33,6 +33,8 @@ import com.rb.multi.agent.dto.UserResponse;
 import com.rb.multi.agent.dto.UserWriteRequest;
 import com.rb.multi.agent.entity.TagCategory;
 import com.rb.multi.agent.entity.User;
+import com.rb.multi.agent.repository.MoodEntryRepository;
+import com.rb.multi.agent.repository.SleepEntryRepository;
 import com.rb.multi.agent.repository.TagRepository;
 import com.rb.multi.agent.repository.UserRepository;
 
@@ -41,6 +43,12 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private MoodEntryRepository moodEntryRepository;
+
+	@Autowired
+	private SleepEntryRepository sleepEntryRepository;
 
 	@Autowired
 	private TagRepository tagRepository;
@@ -759,5 +767,131 @@ class UserControllerIntTest extends AbstractControllerIntTest {
 		mockMvc.perform(json(put("/api/v1/users/{id}", idB), objectMapper.writeValueAsString(stealEmail)))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USER_EMAIL_CONFLICT"));
+	}
+
+	@Test
+	@DisplayName("POST /api/v1/users/{id}/mood-entries — 201 + segundo no último minuto → 429")
+	void createMoodEntry_successThenTooSoon() throws Exception {
+		moodEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UserCreateRequest patient = userCreatePayload("mood-patient", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		String loc = created.getResponse().getHeader("Location");
+		UUID patientId = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+
+		String body = "{\"value\":7}";
+		mockMvc.perform(json(post("/api/v1/users/{id}/mood-entries", patientId), body))
+				.andExpect(status().isCreated())
+				.andExpect(header().exists("Location"))
+				.andExpect(jsonPath("$.kind").value("MOOD"))
+				.andExpect(jsonPath("$.value").value(7));
+
+		mockMvc.perform(json(post("/api/v1/users/{id}/mood-entries", patientId), body))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(jsonPath("$.code").value("MOOD_ENTRY_TOO_SOON"));
+	}
+
+	@Test
+	@DisplayName("POST /api/v1/users/{id}/mood-entries — utilizador inexistente → 404")
+	void createMoodEntry_unknownUser_returns404() throws Exception {
+		moodEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UUID random = UUID.randomUUID();
+		mockMvc.perform(json(post("/api/v1/users/{id}/mood-entries", random), "{\"value\":5}"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+	}
+
+	@Test
+	@DisplayName("POST /api/v1/users/{id}/mood-entries — valor fora da escala → 400")
+	void createMoodEntry_invalidValue_returns400() throws Exception {
+		moodEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UserCreateRequest patient = userCreatePayload("mood-invalid", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		String loc = created.getResponse().getHeader("Location");
+		UUID patientId = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+
+		mockMvc.perform(json(post("/api/v1/users/{id}/mood-entries", patientId), "{\"value\":11}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+	}
+
+	@Test
+	@DisplayName("POST …/sleep-entries/today — segundo no mesmo dia UTC → 409")
+	void sleepToday_duplicateDay_returns409() throws Exception {
+		moodEntryRepository.deleteAll();
+		sleepEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UserCreateRequest patient = userCreatePayload("sleep-today", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		String loc = created.getResponse().getHeader("Location");
+		UUID patientId = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+
+		String body = "{\"value\":5}";
+		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/today", patientId), body))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.kind").value("SLEEP"));
+
+		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/today", patientId), body))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SLEEP_ENTRY_DAY_CONFLICT"));
+	}
+
+	@Test
+	@DisplayName("POST …/sleep-entries/for-date — mesmo dia duas vezes → 409")
+	void sleepForDate_duplicate_returns409() throws Exception {
+		moodEntryRepository.deleteAll();
+		sleepEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UserCreateRequest patient = userCreatePayload("sleep-dated", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		String loc = created.getResponse().getHeader("Location");
+		UUID patientId = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+
+		String json = "{\"value\":6,\"date\":\"2024-11-15\"}";
+		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/for-date", patientId), json))
+				.andExpect(status().isCreated());
+		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/for-date", patientId), json))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("SLEEP_ENTRY_DAY_CONFLICT"));
+	}
+
+	@Test
+	@DisplayName("POST …/sleep-entries/for-date — data futura → 400")
+	void sleepForDate_futureDate_returns400() throws Exception {
+		moodEntryRepository.deleteAll();
+		sleepEntryRepository.deleteAll();
+		userRepository.deleteAll();
+
+		UserCreateRequest patient = userCreatePayload("sleep-future", false);
+		MvcResult created =
+				mockMvc.perform(json(post("/api/v1/users"), objectMapper.writeValueAsString(patient)))
+						.andExpect(status().isCreated())
+						.andReturn();
+		String loc = created.getResponse().getHeader("Location");
+		UUID patientId = UUID.fromString(loc.substring(loc.lastIndexOf('/') + 1));
+
+		String json = "{\"value\":5,\"date\":\"2099-12-31\"}";
+		mockMvc.perform(json(post("/api/v1/users/{id}/sleep-entries/for-date", patientId), json))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 	}
 }

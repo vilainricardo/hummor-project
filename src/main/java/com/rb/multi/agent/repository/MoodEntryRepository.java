@@ -16,4 +16,7 @@ public interface MoodEntryRepository extends JpaRepository<MoodEntry, UUID> {
 
 	List<MoodEntry> findByPatient_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
 			UUID patientId, Instant fromInclusive, Instant toInclusive);
+
+	/** EN: Any mood entry for this patient at or after {@code sinceInclusive}. PT-BR: Registo de humor ≥ instante. */
+	boolean existsByPatient_IdAndCreatedAtGreaterThanEqual(UUID patientId, Instant sinceInclusive);
 }

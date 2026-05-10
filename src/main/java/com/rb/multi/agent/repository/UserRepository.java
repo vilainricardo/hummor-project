@@ -4,7 +4,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,6 +18,11 @@ import com.rb.multi.agent.entity.User;
  * <p><b>PT-BR:</b> Acesso a {@link User} por UUID surrogate mais consultas pelo {@code code} único.</p>
  */
 public interface UserRepository extends JpaRepository<User, UUID> {
+
+	/** EN: Load user row with pessimistic lock (serializes mood-entry rate checks). PT-BR: Linha com lock pessimista. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select u from User u where u.id = :id")
+	Optional<User> findByIdForUpdate(@Param("id") UUID id);
 
 	Optional<User> findByCode(String code);
 
