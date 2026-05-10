@@ -2,6 +2,7 @@ package com.rb.multi.agent.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
@@ -46,8 +47,9 @@ class DoctorEntityIntTest {
 
 		User p1 = userRepository.save(User.seedPatient("pat-a-it"));
 		User p2 = userRepository.save(User.seedPatient("pat-b-it"));
-		clinician.addPatient(p1);
-		clinician.addPatient(p2);
+		LocalDate d0 = LocalDate.of(2026, 3, 1);
+		clinician.addPatient(p1, d0);
+		clinician.addPatient(p2, d0.plusDays(1));
 		clinician = doctorRepository.save(clinician);
 
 		assertThat(clinician.getId()).isNotNull();

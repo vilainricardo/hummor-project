@@ -1,11 +1,13 @@
 package com.rb.multi.agent.service;
 
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.rb.multi.agent.dto.MutualDoctorCodeRequest;
 import com.rb.multi.agent.dto.MutualDoctorPatientLinkResponse;
 import com.rb.multi.agent.entity.Doctor;
 import com.rb.multi.agent.entity.DoctorPatientMutualLink;
@@ -17,8 +19,10 @@ import com.rb.multi.agent.repository.UserRepository;
 
 /**
  * <p><b>EN:</b> Mutual-consent pairing: patient and doctor each affirm the other via public {@code code}; roster membership
- * is granted only once both confirmations exist.</p>
- * <p><b>PT-BR:</b> Par mútuo: paciente e médico confirmam um ao outro pelo {@code code}; só então o paciente entra na lista.</p>
+ * is granted only once both confirmations exist. The patient supplies {@link com.rb.multi.agent.dto.MutualDoctorCodeRequest#accessStartDate()}
+ * (FR-004).</p>
+ * <p><b>PT-BR:</b> Par mútuo: confirmações pelo {@code code}; a lista actualiza-se com ambas as metades. O paciente envia a data de
+ * início de partilha (FR-004).</p>
  */
 @Service
 public class MutualDoctorPatientLinkService {
@@ -37,15 +41,16 @@ public class MutualDoctorPatientLinkService {
 	}
 
 	/**
-	 * EN: Patient {@code patientUserId} asserts intent toward the doctor identified by {@code doctorPublicCode}. PT-BR: Paciente
-	 * manifesta vínculo com o médico do {@code doctorPublicCode}.
+	 * EN: Patient {@code patientUserId} asserts intent toward the doctor in {@code body}; {@code body.accessStartDate()} defines
+	 * inclusive data-access start (FR-004). PT-BR: Paciente confirma e define o início da partilha em {@code body.accessStartDate()}
+	 * (FR-004).
 	 */
 	@Transactional
-	public MutualDoctorPatientLinkResponse patientAcknowledgesDoctor(UUID patientUserId, String doctorPublicCodeRaw) {
+	public MutualDoctorPatientLinkResponse patientAcknowledgesDoctor(UUID patientUserId, MutualDoctorCodeRequest body) {
 		User patient = userRepository.findById(patientUserId).orElseThrow(() -> UserNotFoundException.byId(patientUserId));
-		Doctor doctor = resolveDoctorByPublicCode(doctorPublicCodeRaw);
+		Doctor doctor = resolveDoctorByPublicCode(body.doctorCode());
 		assertNoSelfLink(patient, doctor);
-		return acknowledgeAndMaybeFinalize(patient, doctor, true, false);
+		return acknowledgeAndMaybeFinalize(patient, doctor, true, false, body.accessStartDate());
 	}
 
 	/**
@@ -64,7 +69,7 @@ public class MutualDoctorPatientLinkService {
 						.findByCode(patientLookupCode)
 						.orElseThrow(() -> UserNotFoundException.byCode(patientPublicCodeRaw.trim()));
 		assertNoSelfLink(patient, doctor);
-		return acknowledgeAndMaybeFinalize(patient, doctor, false, true);
+		return acknowledgeAndMaybeFinalize(patient, doctor, false, true, null);
 	}
 
 	private static void assertNoSelfLink(User patient, Doctor doctor) {
@@ -74,7 +79,7 @@ public class MutualDoctorPatientLinkService {
 	}
 
 	private MutualDoctorPatientLinkResponse acknowledgeAndMaybeFinalize(
-			User patient, Doctor doctor, boolean setPatientAck, boolean setDoctorAck) {
+			User patient, Doctor doctor, boolean setPatientAck, boolean setDoctorAck, LocalDate accessStartDateFromPatient) {
 		if (doctor.getPatients().contains(patient)) {
 			return MutualDoctorPatientLinkResponse.alreadyOnRoster();
 		}
@@ -87,6 +92,7 @@ public class MutualDoctorPatientLinkService {
 
 		if (setPatientAck) {
 			link.setPatientAcknowledged(true);
+			link.setAccessStartDate(Objects.requireNonNull(accessStartDateFromPatient, "accessStartDate"));
 		}
 		if (setDoctorAck) {
 			link.setDoctorAcknowledged(true);
@@ -97,13 +103,14 @@ public class MutualDoctorPatientLinkService {
 			return new MutualDoctorPatientLinkResponse(false, link.isPatientAcknowledged(), link.isDoctorAcknowledged());
 		}
 
+		LocalDate accessStart = Objects.requireNonNull(link.getAccessStartDate(), "accessStartDate");
 		Doctor doctorPersisted =
 				doctorRepository
 						.findById(doctor.getId())
 						.orElseThrow(() -> new IllegalStateException("doctor aggregate missing for id=" + doctor.getId()));
 		User patientPersisted =
 				userRepository.findById(patient.getId()).orElseThrow(() -> UserNotFoundException.byId(patient.getId()));
-		doctorPersisted.addPatient(patientPersisted);
+		doctorPersisted.addPatient(patientPersisted, accessStart);
 		doctorRepository.save(doctorPersisted);
 		mutualLinkRepository.delete(link);
 		return MutualDoctorPatientLinkResponse.alreadyOnRoster();

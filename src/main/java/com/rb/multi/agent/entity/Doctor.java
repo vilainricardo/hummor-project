@@ -1,32 +1,28 @@
 package com.rb.multi.agent.entity;
 
+import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 /**
  * <p><b>EN:</b> Clinician account via JPA JOINED inheritance: same surrogate key as {@link User}, extra row in {@code doctors}
- * and a many-to-many patient roster for now.</p>
- * <p><b>PT-BR:</b> Conta de médico com herança JOINED: mesma chave que {@link User}, linha extra em {@code doctors} e lista
- * de pacientes (N:N) por hora.</p>
+ * and roster rows in {@code doctor_patients} ({@link DoctorPatientAssociation}) with FR-004 access start and FR-003 status.</p>
+ * <p><b>PT-BR:</b> Conta de médico; linhas em {@code doctor_patients} com data de acesso (FR-004) e estado do vínculo (FR-003).</p>
  */
 @Entity
 @Table(name = "doctors")
 public class Doctor extends User {
 
-	@ManyToMany(fetch = FetchType.LAZY)
-	@JoinTable(
-			name = "doctor_patients",
-			joinColumns = @JoinColumn(name = "doctor_id", nullable = false),
-			inverseJoinColumns = @JoinColumn(name = "patient_user_id", nullable = false))
-	private Set<User> patients = new LinkedHashSet<>();
+	@OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+	private Set<DoctorPatientAssociation> patientRoster = new LinkedHashSet<>();
 
 	protected Doctor() {
 	}
@@ -36,18 +32,25 @@ public class Doctor extends User {
 		super(code, true);
 	}
 
+	/**
+	 * EN: Distinct patients on the roster (join snapshot only). PT-BR: Pacientes distintos na lista (apenas leitura).
+	 */
 	public Set<User> getPatients() {
-		return patients;
+		return patientRoster.stream().map(DoctorPatientAssociation::getPatient).collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 
-	/** EN: Adds a patient to this doctor’s roster. PT-BR: Adiciona paciente ao conjunto. */
-	public void addPatient(User patient) {
-		patients.add(Objects.requireNonNull(patient, "patient"));
+	/**
+	 * EN: Adds a roster membership with the patient-defined access start date (FR-004). PT-BR: Adiciona entrada com data de início
+	 * de partilha definida pelo paciente (FR-004).
+	 */
+	public void addPatient(User patient, LocalDate accessStartDate) {
+		patientRoster.add(new DoctorPatientAssociation(this, patient, accessStartDate));
 	}
 
 	/** EN: Removes a patient link. PT-BR: Remove ligação ao paciente. */
 	public void removePatient(User patient) {
-		patients.remove(patient);
+		Objects.requireNonNull(patient, "patient");
+		patientRoster.removeIf(a -> a.getPatient().getId().equals(patient.getId()));
 	}
 
 	@Override

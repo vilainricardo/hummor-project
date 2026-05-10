@@ -1,5 +1,6 @@
 package com.rb.multi.agent.entity;
 
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -16,9 +17,10 @@ import jakarta.persistence.UniqueConstraint;
 
 /**
  * <p><b>EN:</b> Pending mutual link between one patient-shaped {@link User} and one {@link Doctor}; both sides must confirm by
- * public {@code code} before the patient appears in {@link Doctor#getPatients()}.</p>
- * <p><b>PT-BR:</b> Ligação pendente entre um {@link User} paciente e um {@link Doctor}; ambos confirmam pelo {@code code}
- * antes do paciente entrar em {@link Doctor#getPatients()}.</p>
+ * public {@code code} before the patient appears in {@link Doctor#getPatients()}. {@link #accessStartDate} is set when the
+ * <em>patient</em> acknowledges (FR-004) and is copied to {@code doctor_patients} when the link completes.</p>
+ * <p><b>PT-BR:</b> Ligação pendente paciente–médico; ambos confirmam pelo {@code code}. A {@link #accessStartDate} é definida
+ * pelo passo do <em>paciente</em> (FR-004) e copiada para {@code doctor_patients} ao completar.</p>
  */
 @Entity
 @Table(
@@ -43,6 +45,13 @@ public class DoctorPatientMutualLink {
 
 	@Column(name = "doctor_acknowledged", nullable = false)
 	private boolean doctorAcknowledged;
+
+	/**
+	 * EN: Inclusive date from which the doctor may view patient data; set on patient acknowledgement (FR-004).
+	 * PT-BR: Data inclusive a partir da qual o médico pode ver dados do paciente; definida na confirmação do paciente (FR-004).
+	 */
+	@Column(name = "access_start_date")
+	private LocalDate accessStartDate;
 
 	protected DoctorPatientMutualLink() {
 	}
@@ -87,5 +96,13 @@ public class DoctorPatientMutualLink {
 
 	public boolean isFullyAcknowledged() {
 		return patientAcknowledged && doctorAcknowledged;
+	}
+
+	public LocalDate getAccessStartDate() {
+		return accessStartDate;
+	}
+
+	public void setAccessStartDate(LocalDate accessStartDate) {
+		this.accessStartDate = accessStartDate;
 	}
 }

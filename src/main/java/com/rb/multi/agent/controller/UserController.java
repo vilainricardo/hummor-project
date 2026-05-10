@@ -90,7 +90,7 @@ public class UserController {
 	@PostMapping("/{patientUserId}/mutual-links/doctor-code")
 	public MutualDoctorPatientLinkResponse mutualLinkPatientTowardDoctor(
 			@PathVariable UUID patientUserId, @Valid @RequestBody MutualDoctorCodeRequest body) {
-		return mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patientUserId, body.doctorCode());
+		return mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patientUserId, body);
 	}
 
 	/** EN: Doctor confirms intent to bind to patient identified by public {@code patientCode}. PT-BR: Médico pede vínculo com paciente pelo code. */

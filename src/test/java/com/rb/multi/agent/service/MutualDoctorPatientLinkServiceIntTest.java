@@ -3,6 +3,8 @@ package com.rb.multi.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.LocalDate;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,10 +12,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.rb.multi.agent.dto.MutualDoctorCodeRequest;
 import com.rb.multi.agent.dto.MutualDoctorPatientLinkResponse;
 import com.rb.multi.agent.entity.Doctor;
+import com.rb.multi.agent.entity.DoctorPatientKey;
+import com.rb.multi.agent.entity.DoctorPatientLinkStatus;
 import com.rb.multi.agent.entity.User;
 import com.rb.multi.agent.exception.UserNotFoundException;
+import com.rb.multi.agent.repository.DoctorPatientAssociationRepository;
 import com.rb.multi.agent.repository.DoctorPatientMutualLinkRepository;
 import com.rb.multi.agent.repository.DoctorRepository;
 import com.rb.multi.agent.repository.UserRepository;
@@ -21,6 +27,9 @@ import com.rb.multi.agent.repository.UserRepository;
 @SpringBootTest
 @Transactional
 class MutualDoctorPatientLinkServiceIntTest {
+
+	/** EN: Patient-defined access start used in mutual-link requests. PT-BR: Data de partilha usada nos testes de vínculo. */
+	private static final LocalDate ACCESS_START = LocalDate.of(2026, 5, 1);
 
 	@Autowired
 	private MutualDoctorPatientLinkService mutualDoctorPatientLinkService;
@@ -34,9 +43,13 @@ class MutualDoctorPatientLinkServiceIntTest {
 	@Autowired
 	private DoctorPatientMutualLinkRepository mutualLinkRepository;
 
+	@Autowired
+	private DoctorPatientAssociationRepository doctorPatientAssociationRepository;
+
 	@BeforeEach
 	void purge() {
 		mutualLinkRepository.deleteAll();
+		doctorPatientAssociationRepository.deleteAll();
 		userRepository.deleteAll();
 	}
 
@@ -47,7 +60,8 @@ class MutualDoctorPatientLinkServiceIntTest {
 		Doctor doc = (Doctor) userRepository.save(User.seedClinician("doc-mutual-a"));
 
 		MutualDoctorPatientLinkResponse r1 =
-				mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patient.getId(), "doc-mutual-a");
+				mutualDoctorPatientLinkService.patientAcknowledgesDoctor(
+						patient.getId(), new MutualDoctorCodeRequest("doc-mutual-a", ACCESS_START));
 		assertThat(r1.rosterLinkedNow()).isFalse();
 		assertThat(r1.patientAcknowledged()).isTrue();
 		assertThat(r1.doctorAcknowledged()).isFalse();
@@ -60,6 +74,10 @@ class MutualDoctorPatientLinkServiceIntTest {
 
 		Doctor refreshed = doctorRepository.findById(doc.getId()).orElseThrow();
 		assertThat(refreshed.getPatients()).extracting(User::getCode).containsExactly("pat-mutual-a");
+		var assoc =
+				doctorPatientAssociationRepository.findById(new DoctorPatientKey(doc.getId(), patient.getId())).orElseThrow();
+		assertThat(assoc.getAccessStartDate()).isEqualTo(ACCESS_START);
+		assertThat(assoc.getStatus()).isEqualTo(DoctorPatientLinkStatus.ACTIVE);
 		assertThat(mutualLinkRepository.count()).isZero();
 	}
 
@@ -76,12 +94,16 @@ class MutualDoctorPatientLinkServiceIntTest {
 		assertThat(r1.doctorAcknowledged()).isTrue();
 
 		MutualDoctorPatientLinkResponse r2 =
-				mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patient.getId(), "doc-mutual-b");
+				mutualDoctorPatientLinkService.patientAcknowledgesDoctor(
+						patient.getId(), new MutualDoctorCodeRequest("doc-mutual-b", ACCESS_START));
 		assertThat(r2.rosterLinkedNow()).isTrue();
 
-		assertThat(doctorRepository.findById(doc.getId()).orElseThrow().getPatients())
-				.extracting(User::getCode)
-				.containsExactly("pat-mutual-b");
+		Doctor done = doctorRepository.findById(doc.getId()).orElseThrow();
+		assertThat(done.getPatients()).extracting(User::getCode).containsExactly("pat-mutual-b");
+		var assoc =
+				doctorPatientAssociationRepository.findById(new DoctorPatientKey(doc.getId(), patient.getId())).orElseThrow();
+		assertThat(assoc.getAccessStartDate()).isEqualTo(ACCESS_START);
+		assertThat(assoc.getStatus()).isEqualTo(DoctorPatientLinkStatus.ACTIVE);
 	}
 
 	@Test
@@ -89,7 +111,10 @@ class MutualDoctorPatientLinkServiceIntTest {
 	void nonDoctorCode_throws() {
 		User patient = userRepository.save(User.seedPatient("pat-mutual-c"));
 		userRepository.save(User.seedPatient("not-a-doc"));
-		assertThatThrownBy(() -> mutualDoctorPatientLinkService.patientAcknowledgesDoctor(patient.getId(), "not-a-doc"))
+		assertThatThrownBy(
+						() ->
+								mutualDoctorPatientLinkService.patientAcknowledgesDoctor(
+										patient.getId(), new MutualDoctorCodeRequest("not-a-doc", ACCESS_START)))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("doctor profile");
 	}
