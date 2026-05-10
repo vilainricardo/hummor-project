@@ -35,5 +35,14 @@ public enum ApiProblemCode {
 	/** EN: Maximum distinct clinician catalogue tags reached for this patient. PT-BR: Máximo de etiquetas por médico neste paciente atingido. */
 	TAG_ASSIGNMENT_SLICE_FULL,
 	/** EN: Unhandled server failure. PT-BR: Falha interna não tratada. */
-	INTERNAL_ERROR
+	INTERNAL_ERROR,
+
+	/** EN: User id is not a doctor profile. PT-BR: O id não é um perfil de médico. */
+	NOT_A_DOCTOR_PROFILE,
+
+	/** EN: Doctor is not on the patient roster. PT-BR: Médico não está na lista deste paciente. */
+	DOCTOR_PATIENT_NOT_LINKED,
+
+	/** EN: Patient revoked clinician access to data (FR-003). PT-BR: Paciente revogou acesso aos dados (FR-003). */
+	PATIENT_DATA_ACCESS_REVOKED
 }

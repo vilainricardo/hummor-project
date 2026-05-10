@@ -26,6 +26,9 @@ import com.rb.multi.agent.exception.DuplicateUserEmailException;
 import com.rb.multi.agent.exception.PatientTagAssignmentNotFoundException;
 import com.rb.multi.agent.exception.TagAssignmentSliceFullException;
 import com.rb.multi.agent.exception.TagNotFoundException;
+import com.rb.multi.agent.exception.DoctorPatientLinkNotFoundException;
+import com.rb.multi.agent.exception.NotDoctorProfileException;
+import com.rb.multi.agent.exception.PatientDataAccessRevokedException;
 import com.rb.multi.agent.exception.UnknownTagReferencesException;
 import com.rb.multi.agent.exception.UserNotFoundException;
 
@@ -70,6 +73,49 @@ public class ApiExceptionHandler {
 			Map<String, String> fieldErrors) {
 		ApiErrorResponse body = ApiErrorResponse.of(status, problemCode, localizedMessage, path(request), fieldErrors);
 		return ResponseEntity.status(status).body(body);
+	}
+
+	/** EN: Path user id exists but {@link com.rb.multi.agent.entity.Doctor} row missing. PT-BR: Id não é perfil de médico. */
+	@ExceptionHandler(NotDoctorProfileException.class)
+	public ResponseEntity<ApiErrorResponse> notDoctorProfile(NotDoctorProfileException ex, HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.FORBIDDEN,
+				ApiProblemCode.NOT_A_DOCTOR_PROFILE,
+				msg("error.doctor.notProfile", ex.getUserId().toString()),
+				null);
+	}
+
+	/** EN: Doctor–patient roster row missing. PT-BR: Sem vínculo na lista médico–paciente. */
+	@ExceptionHandler(DoctorPatientLinkNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> doctorPatientNotLinked(
+			DoctorPatientLinkNotFoundException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.NOT_FOUND,
+				ApiProblemCode.DOCTOR_PATIENT_NOT_LINKED,
+				msg(
+						"error.doctorPatient.notLinked",
+						ex.getDoctorId().toString(),
+						ex.getPatientId().toString()),
+				null);
+	}
+
+	/** EN: Patient revoked access (FR-003). PT-BR: Paciente revogou acesso (FR-003). */
+	@ExceptionHandler(PatientDataAccessRevokedException.class)
+	public ResponseEntity<ApiErrorResponse> patientAccessRevoked(
+			PatientDataAccessRevokedException ex,
+			HttpServletRequest request) {
+		return respond(
+				request,
+				HttpStatus.FORBIDDEN,
+				ApiProblemCode.PATIENT_DATA_ACCESS_REVOKED,
+				msg(
+						"error.doctorPatient.accessRevoked",
+						ex.getDoctorId().toString(),
+						ex.getPatientId().toString()),
+				null);
 	}
 
 	/** EN: User missing by UUID or public code. PT-BR: Utilizador inexistente por UUID ou code público. */
