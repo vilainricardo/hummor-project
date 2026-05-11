@@ -17,3 +17,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/mindsignal_logo.png
+    - assets/images/google_icon.png
+    - assets/images/doctor_patient_illustration.png
+    - assets/images/background_pattern.png

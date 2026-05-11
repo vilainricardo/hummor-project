@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'screens/login_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const HummorApp());
@@ -10,16 +12,10 @@ class HummorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Hummor',
+      title: 'MindSignal',
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Center(
-          child: Text(
-            'Hello, world!',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-        ),
-      ),
+      theme: AppTheme.light,
+      home: const LoginScreen(),
     );
   }
 }
